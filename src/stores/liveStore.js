@@ -37,6 +37,20 @@ function amountValue(value) {
   return text.includes("万") ? number * 10000 : number
 }
 
+function parseCount(...values) {
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") {
+      continue
+    }
+    const text = String(value).replace(/[,\s]/g, "")
+    const number = Number.parseFloat(text)
+    if (!Number.isNaN(number)) {
+      return Math.round(text.includes("万") ? number * 10000 : number)
+    }
+  }
+  return null
+}
+
 function formatError(error) {
   return error && error.message ? error.message : String(error)
 }
@@ -154,6 +168,9 @@ function defaultState() {
       isLive: false,
       liveId: "",
       onlineCount: 0,
+      likeCount: 0,
+      bananaCount: 0,
+      suppressOnlineCountUntil: 0,
       danmakuList: [],
       watchingList: [],
       managerList: [],
@@ -330,6 +347,7 @@ export const useLiveStore = defineStore("live", {
         this.activeTab = "live"
         await this.loadStartupLiveData()
         await this.startDanmu()
+        this.switchToRoomIfLive()
       } catch (error) {
         this.lastError = formatError(error)
         this.log(`恢复登录失败：${this.lastError}`)
@@ -346,6 +364,7 @@ export const useLiveStore = defineStore("live", {
       this.activeTab = "live"
       await this.loadStartupLiveData()
       await this.startDanmu()
+      this.switchToRoomIfLive()
     },
     async loginWithQRCode() {
       await this.connect()
@@ -375,6 +394,7 @@ export const useLiveStore = defineStore("live", {
         this.activeTab = "live"
         await this.loadStartupLiveData()
         await this.startDanmu()
+        this.switchToRoomIfLive()
       } catch (error) {
         this.qrLogin.status = "error"
         this.lastError = formatError(error)
@@ -389,6 +409,9 @@ export const useLiveStore = defineStore("live", {
       this.userProfile = normalizeUserProfile()
       this.room.liveId = ""
       this.room.isLive = false
+      this.room.onlineCount = 0
+      this.room.likeCount = 0
+      this.room.bananaCount = 0
       this.room.danmakuList = []
       this.room.watchingList = []
       this.room.managerList = []
@@ -416,12 +439,18 @@ export const useLiveStore = defineStore("live", {
         this.userProfile = normalizeUserProfile({ nickname: this.userName }, this.userId)
       }
     },
+    switchToRoomIfLive() {
+      if (this.room.isLive || this.live.isLive || this.room.liveId || this.live.liveId) {
+        this.activeTab = "room"
+      }
+    },
     async loadStartupLiveData() {
       const jobs = [
         { name: "推流码", run: () => this.loadPushConfig() },
         { name: "直播状态", run: () => this.loadLiveStatus() },
         { name: "直播分类", run: () => this.loadLiveTypes() },
         { name: "直播间信息", run: () => this.loadRoom() },
+        { name: "转码信息", run: () => this.loadTranscodeInfo() },
       ]
       for (const job of jobs) {
         try {
@@ -445,9 +474,25 @@ export const useLiveStore = defineStore("live", {
       try {
         const data = await this.request(BackendTypes.GET_DANMU, { liverUID: Number(this.userId) })
         if (data && data.StreamInfo) {
+          const streamInfo = data.StreamInfo
+          const liveInfo = data.LiveInfo || data.liveInfo || {}
+          const displayInfo = liveInfo.displayInfo || liveInfo.DisplayInfo || streamInfo.displayInfo || streamInfo.DisplayInfo || {}
           this.room.isLive = true
-          this.room.liveId = data.StreamInfo.liveID || ""
-          this.live.streamName = data.StreamInfo.streamName || this.live.streamName
+          this.room.liveId = streamInfo.liveID || ""
+          this.live.streamName = streamInfo.streamName || this.live.streamName
+          const onlineCount = parseCount(displayInfo.watchingCount, displayInfo.WatchingCount)
+          if (onlineCount !== null) {
+            this.room.onlineCount = onlineCount
+          }
+          const likeCount = parseCount(displayInfo.likeCount, displayInfo.LikeCount)
+          if (likeCount !== null) {
+            this.room.likeCount = likeCount
+          }
+          const bananaCount = parseCount(liveInfo.allBananaCount, liveInfo.AllBananaCount, streamInfo.allBananaCount, streamInfo.AllBananaCount)
+          if (bananaCount !== null) {
+            this.room.bananaCount = bananaCount
+          }
+          await this.loadTranscodeInfo()
         }
       } catch (error) {
         this.log(`弹幕监听未启动：${formatError(error)}`)
@@ -465,10 +510,26 @@ export const useLiveStore = defineStore("live", {
     },
     handleDanmuMessage(message) {
       if (message.type === BackendDanmuTypes.DISPLAY_INFO && message.data) {
-        const onlineCount = Number.parseInt(message.data.watchingCount, 10)
-        if (!Number.isNaN(onlineCount)) {
+        const onlineCount = parseCount(message.data.watchingCount, message.data.WatchingCount)
+        if (onlineCount !== null && Date.now() >= this.room.suppressOnlineCountUntil) {
           this.room.onlineCount = onlineCount
         }
+        const likeCount = parseCount(message.data.likeCount, message.data.LikeCount)
+        if (likeCount !== null) {
+          this.room.likeCount = likeCount
+        }
+      }
+      if (message.type === BackendDanmuTypes.BANANA_COUNT && message.data) {
+        const bananaCount = parseCount(message.data.bananaCount, message.data.BananaCount)
+        if (bananaCount !== null) {
+          this.room.bananaCount = bananaCount
+        }
+      }
+      if (message.type === BackendDanmuTypes.TOP_USERS && Array.isArray(message.data)) {
+        this.room.billList = message.data
+          .map(normalizeWatchingUser)
+          .filter((item) => amountValue(item.displaySendAmount) > 0)
+          .sort((a, b) => amountValue(b.displaySendAmount) - amountValue(a.displaySendAmount))
       }
       if (message.type === BackendDanmuTypes.DANMU_STOP) {
         this.room.isLive = false
@@ -510,6 +571,14 @@ export const useLiveStore = defineStore("live", {
         this.room.isLive = Boolean(info.liveID)
         this.room.liveId = info.liveID || ""
         this.room.onlineCount = info.onlineCount || 0
+        const likeCount = parseCount(info.likeCount)
+        if (likeCount !== null) {
+          this.room.likeCount = likeCount
+        }
+        if (info.liveID) {
+          this.live.liveId = info.liveID
+          this.live.isLive = true
+        }
         if (info.liveID) {
           await this.loadWatchingList()
         }
@@ -580,6 +649,7 @@ export const useLiveStore = defineStore("live", {
       if (!liveId) {
         throw new Error("当前没有直播间 liveID")
       }
+      this.room.suppressOnlineCountUntil = Date.now() + 5000
       await this.request(BackendTypes.SEND_COMMENT, {
         liveID: liveId,
         liverUID: Number(this.userId),
@@ -646,6 +716,9 @@ export const useLiveStore = defineStore("live", {
       this.persist()
     },
     async loadTranscodeInfo() {
+      if (!this.live.streamName) {
+        await this.loadPushConfig()
+      }
       if (!this.live.streamName) {
         return
       }

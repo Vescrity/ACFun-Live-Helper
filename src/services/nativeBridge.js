@@ -31,6 +31,23 @@ export async function copyText(text) {
   return undefined
 }
 
+export async function openExternalURL(url) {
+  const app = wailsApp()
+  if (app && app.OpenExternalURL) {
+    return app.OpenExternalURL(url)
+  }
+  window.open(url, "_blank", "noopener,noreferrer")
+  return undefined
+}
+
+export async function getSystemFonts() {
+  const app = wailsApp()
+  if (app && app.GetSystemFonts) {
+    return app.GetSystemFonts()
+  }
+  return []
+}
+
 export async function getOverlayBaseUrl() {
   const app = wailsApp()
   return app && app.GetOverlayBaseUrl ? app.GetOverlayBaseUrl() : ""

@@ -12,6 +12,7 @@ require (
 	github.com/valyala/fasthttp v1.58.0
 	github.com/valyala/fastjson v1.6.4
 	github.com/wailsapp/wails/v2 v2.12.0
+	golang.org/x/sys v0.30.0
 )
 
 require (
@@ -46,7 +47,6 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.33.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	google.golang.org/protobuf v1.35.2 // indirect
 )

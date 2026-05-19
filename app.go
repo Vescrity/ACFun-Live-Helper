@@ -15,10 +15,13 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sys/windows/registry"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -213,6 +216,61 @@ func (a *App) CopyText(text string) error {
 		return errors.New("application is not ready")
 	}
 	return wailsRuntime.ClipboardSetText(a.ctx, text)
+}
+
+func (a *App) OpenExternalURL(rawURL string) error {
+	if a.ctx == nil {
+		return errors.New("application is not ready")
+	}
+	target := strings.TrimSpace(rawURL)
+	if target == "" {
+		return errors.New("url is empty")
+	}
+	wailsRuntime.BrowserOpenURL(a.ctx, target)
+	return nil
+}
+
+func (a *App) GetSystemFonts() []string {
+	fonts := map[string]struct{}{
+		"Arial":           {},
+		"Microsoft YaHei": {},
+		"Noto Sans SC":    {},
+		"Segoe UI":        {},
+		"SimHei":          {},
+		"SimSun":          {},
+		"sans-serif":      {},
+	}
+	if runtime.GOOS == "windows" {
+		readWindowsFontRegistry(registry.LOCAL_MACHINE, fonts)
+		readWindowsFontRegistry(registry.CURRENT_USER, fonts)
+	}
+	result := make([]string, 0, len(fonts))
+	for font := range fonts {
+		result = append(result, font)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func readWindowsFontRegistry(root registry.Key, fonts map[string]struct{}) {
+	key, err := registry.OpenKey(root, `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts`, registry.READ)
+	if err != nil {
+		return
+	}
+	defer key.Close()
+	names, err := key.ReadValueNames(-1)
+	if err != nil {
+		return
+	}
+	for _, name := range names {
+		font := strings.TrimSpace(name)
+		if index := strings.LastIndex(font, "("); index > 0 {
+			font = strings.TrimSpace(font[:index])
+		}
+		if font != "" {
+			fonts[font] = struct{}{}
+		}
+	}
 }
 
 func (a *App) GetOverlayBaseUrl() (string, error) {

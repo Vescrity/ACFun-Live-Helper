@@ -1067,7 +1067,7 @@ select:focus {
 }
 
 .feed-item {
-  grid-template-columns: 72px 140px minmax(150px, 1fr) auto auto auto;
+  grid-template-columns: 72px 140px minmax(150px, 1fr) auto auto;
   gap: 6px;
 }
 
@@ -1116,6 +1116,21 @@ select:focus {
   align-items: center;
   min-width: 0;
   gap: 8px;
+}
+
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .compact-item strong {

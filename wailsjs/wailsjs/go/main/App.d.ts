@@ -11,7 +11,11 @@ export function GetLogPath():Promise<string>;
 
 export function GetOverlayBaseUrl():Promise<string>;
 
+export function GetSystemFonts():Promise<Array<string>>;
+
 export function OpenCoverFile():Promise<string>;
+
+export function OpenExternalURL(arg1:string):Promise<void>;
 
 export function OpenLogFolder():Promise<void>;
 

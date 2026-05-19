@@ -167,6 +167,10 @@ type acLive struct {
 	cancel           context.CancelFunc
 	visitorToken     string
 	visitorTokenTime time.Time
+	stateMu          sync.RWMutex
+	displayInfo      acfundanmu.DisplayInfo
+	hasDisplayInfo   bool
+	bananaCount      string
 }
 
 // 转发数据

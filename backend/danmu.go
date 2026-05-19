@@ -50,11 +50,72 @@ func isTransientUpstreamError(msg string) bool {
 	return false
 }
 
+func (ac *acLive) cacheDisplayInfo(info *acfundanmu.DisplayInfo) {
+	if info == nil {
+		return
+	}
+	ac.stateMu.Lock()
+	defer ac.stateMu.Unlock()
+	if info.WatchingCount != "" {
+		ac.displayInfo.WatchingCount = info.WatchingCount
+	}
+	if info.LikeCount != "" {
+		ac.displayInfo.LikeCount = info.LikeCount
+	}
+	ac.displayInfo.LikeDelta = info.LikeDelta
+	ac.hasDisplayInfo = true
+}
+
+func (ac *acLive) cacheBananaCount(count string) {
+	ac.stateMu.Lock()
+	defer ac.stateMu.Unlock()
+	ac.bananaCount = count
+}
+
+func (ac *acLive) danmuSnapshotJSON(uid int64, streamInfo *acfundanmu.StreamInfo) string {
+	if streamInfo == nil && ac.ac != nil {
+		streamInfo = ac.ac.GetStreamInfo()
+	}
+
+	type liveState struct {
+		AllBananaCount string                  `json:"allBananaCount,omitempty"`
+		DisplayInfo    *acfundanmu.DisplayInfo `json:"displayInfo,omitempty"`
+	}
+	type snapshot struct {
+		LiverUID   int64                  `json:"liverUID"`
+		StreamInfo *acfundanmu.StreamInfo `json:"StreamInfo,omitempty"`
+		LiveInfo   *liveState             `json:"LiveInfo,omitempty"`
+	}
+
+	ac.stateMu.RLock()
+	state := liveState{
+		AllBananaCount: ac.bananaCount,
+	}
+	if ac.hasDisplayInfo {
+		info := ac.displayInfo
+		state.DisplayInfo = &info
+	}
+	ac.stateMu.RUnlock()
+
+	resp := snapshot{
+		LiverUID:   uid,
+		StreamInfo: streamInfo,
+	}
+	if state.AllBananaCount != "" || state.DisplayInfo != nil {
+		resp.LiveInfo = &state
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return fmt.Sprintf(`{"liverUID":%d}`, uid)
+	}
+	return string(data)
+}
+
 // 获取弹幕
 func (conn *wsConn) getDanmu(ctx context.Context, cancel context.CancelFunc, acMap *sync.Map, uid int64, reqID string) {
 	ac := new(acLive)
-	if _, ok := acMap.Load(uid); ok {
-		_ = conn.send(fmt.Sprintf(respJSON, getDanmuType, quote(reqID), fmt.Sprintf(`{"liverUID":%d}`, uid)))
+	if aci, ok := acMap.Load(uid); ok {
+		_ = conn.send(fmt.Sprintf(respJSON, getDanmuType, quote(reqID), aci.(*acLive).danmuSnapshotJSON(uid, nil)))
 		return
 	}
 	acMap.Store(uid, ac)
@@ -70,18 +131,28 @@ func (conn *wsConn) getDanmu(ctx context.Context, cancel context.CancelFunc, acM
 	ac.conn = conn
 	ac.ac = newAC
 	info := ac.ac.GetStreamInfo()
-	data, err := json.Marshal(info)
-	if err != nil {
-		conn.debug("getDanmu(): cannot marshal to json: %v", err)
-		_ = conn.send(fmt.Sprintf(respErrJSON, getDanmuType, quote(reqID), reqHandleErr, quote(err.Error())))
-		return
-	}
-	err = conn.send(fmt.Sprintf(respJSON, getDanmuType, quote(reqID), fmt.Sprintf(`{"liverUID":%d,"StreamInfo":%s}`, uid, string(data))))
+	err = conn.send(fmt.Sprintf(respJSON, getDanmuType, quote(reqID), ac.danmuSnapshotJSON(uid, info)))
 	if err != nil {
 		return
 	}
 
 	errCh := make(chan error, 100)
+	likeInfo, err := ac.ac.GetUserLiveInfo(uid)
+	if err != nil {
+		conn.debug("getDanmu(): cannot get initial live info: %v", err)
+	} else if likeInfo != nil {
+		info := acfundanmu.DisplayInfo{LikeCount: fmt.Sprintf("%d", likeInfo.LikeCount)}
+		ac.cacheDisplayInfo(&info)
+		data, err := json.Marshal(info)
+		if err != nil {
+			conn.debug("getDanmu(): cannot marshal initial display info: %+v", info)
+		} else {
+			err = conn.send(fmt.Sprintf(danmuJSON, uid, displayInfoType, string(data)))
+			if err != nil {
+				errCh <- err
+			}
+		}
+	}
 
 	ac.ac.OnComment(func(ac *acfundanmu.AcFunLive, d *acfundanmu.Comment) {
 		data, err := json.Marshal(d)
@@ -231,6 +302,7 @@ func (conn *wsConn) getDanmu(ctx context.Context, cancel context.CancelFunc, acM
 	})
 
 	ac.ac.OnBananaCount(func(ac *acfundanmu.AcFunLive, allBananaCount string) {
+		conn.debug("OnBananaCount(): allBananaCount=%s", allBananaCount)
 		data := fmt.Sprintf(`{"bananaCount":%s}`, quote(allBananaCount))
 		err := conn.send(fmt.Sprintf(danmuJSON, uid, bananaCountType, data))
 		if err != nil {
@@ -239,6 +311,7 @@ func (conn *wsConn) getDanmu(ctx context.Context, cancel context.CancelFunc, acM
 	})
 
 	ac.ac.OnDisplayInfo(func(ac *acfundanmu.AcFunLive, d *acfundanmu.DisplayInfo) {
+		conn.debug("OnDisplayInfo(): watchingCount=%s likeCount=%s likeDelta=%d", d.WatchingCount, d.LikeCount, d.LikeDelta)
 		data, err := json.Marshal(d)
 		if err != nil {
 			conn.debug("OnDisplayInfo(): cannot marshal to json: %+v", d)

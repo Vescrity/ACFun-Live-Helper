@@ -22,8 +22,16 @@ export function GetOverlayBaseUrl() {
   return window['go']['main']['App']['GetOverlayBaseUrl']();
 }
 
+export function GetSystemFonts() {
+  return window['go']['main']['App']['GetSystemFonts']();
+}
+
 export function OpenCoverFile() {
   return window['go']['main']['App']['OpenCoverFile']();
+}
+
+export function OpenExternalURL(arg1) {
+  return window['go']['main']['App']['OpenExternalURL'](arg1);
 }
 
 export function OpenLogFolder() {

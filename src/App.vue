@@ -296,14 +296,21 @@
         <div class="panel wide">
           <div class="panel-head">
             <h3>直播间</h3>
-            <span>LiveID {{ store.room.liveId || "-" }}</span>
+            <button class="text-button" :disabled="!store.userId" @click="openLiveRoom">
+              <ExternalLink :size="14" /><span>打开网页直播间</span>
+            </button>
           </div>
           <div class="metrics">
             <div><strong>{{ store.room.isLive ? "开播中" : "未开播" }}</strong><span>状态</span></div>
+            <div><strong>{{ store.room.liveId || "-" }}</strong><span>LiveID</span></div>
             <div><strong>{{ store.room.onlineCount }}</strong><span>在线</span></div>
             <div><strong>{{ store.room.danmakuList.length }}</strong><span>弹幕</span></div>
             <div><strong>{{ store.room.watchingList.length }}</strong><span>观众</span></div>
             <div><strong>{{ store.room.managerList.length }}</strong><span>房管</span></div>
+          </div>
+          <div class="metrics room-engagement">
+            <div><strong>{{ displayCount(store.room.likeCount) }}</strong><span>点赞</span></div>
+            <div><strong>{{ displayCount(store.room.bananaCount) }}</strong><span>香蕉</span></div>
           </div>
           <div class="danmaku-compose">
             <input v-model="commentText" placeholder="发送弹幕" @keyup.enter="sendComment" />
@@ -325,7 +332,6 @@
               <strong>{{ item.nickname }}</strong>
               <span class="feed-content">{{ item.content }}</span>
               <span v-if="item.isGift" class="tag">x{{ item.num }}</span>
-              <button class="small-icon" title="房管" @click="run(() => store.addManager(item))"><ShieldPlus :size="14" /></button>
               <button class="small-icon danger" title="踢出" @click="run(() => store.kickUser(item))"><Ban :size="14" /></button>
             </article>
             <div v-if="!store.room.danmakuList.length" class="empty-state">开播后这里会显示实时弹幕。</div>
@@ -350,6 +356,26 @@
               </div>
             </article>
             <div v-if="!store.room.watchingList.length" class="empty-state compact-empty">暂无观众</div>
+          </div>
+        </div>
+
+        <div class="panel table-panel">
+          <div class="panel-head">
+            <h3>贡献榜 ({{ store.room.billList.length }})</h3>
+            <span>礼物贡献</span>
+          </div>
+          <div class="compact-list">
+            <article v-for="(item, index) in store.room.billList" :key="item.userId || index" class="compact-item">
+              <div class="compact-user">
+                <span class="rank-badge">{{ index + 1 }}</span>
+                <span>
+                  <strong>{{ item.nickname || "匿名用户" }}</strong>
+                  <span>{{ item.userId || "-" }}</span>
+                </span>
+              </div>
+              <span class="tag">{{ item.displaySendAmount || "-" }}</span>
+            </article>
+            <div v-if="!store.room.billList.length" class="empty-state compact-empty">暂无贡献数据</div>
           </div>
         </div>
 
@@ -398,7 +424,11 @@
             <label><span>字号</span><input v-model.number="store.overlay.fontSize" type="number" min="12" max="48" @change="store.persist" /></label>
             <label><span>圆角</span><input v-model.number="store.overlay.rounded" type="number" min="0" max="40" @change="store.persist" /></label>
             <label><span>间距</span><input v-model.number="store.overlay.gap" type="number" min="0" max="32" @change="store.persist" /></label>
-            <label class="full"><span>字体</span><input v-model="store.overlay.fontFamily" @change="store.persist" /></label>
+            <label class="full"><span>字体</span>
+              <select v-model="store.overlay.fontFamily" @change="store.persist">
+                <option v-for="font in systemFonts" :key="font" :value="font">{{ font }}</option>
+              </select>
+            </label>
             <label><span>动画</span>
               <select v-model="store.overlay.animation" @change="store.persist">
                 <option value="slide">滑入</option>
@@ -631,6 +661,7 @@ import {
   Ban,
   ChartBar,
   Clipboard,
+  ExternalLink,
   FolderOpen,
   ImageUp,
   KeyRound,
@@ -664,7 +695,9 @@ import {
   getBackendPort,
   getLogPath,
   getOverlayBaseUrl,
+  getSystemFonts,
   openCoverFile,
+  openExternalURL,
   openLogFolder,
   readCoverFile,
   saveCoverImage,
@@ -681,6 +714,7 @@ const commentText = ref("")
 const coverPreviewSrc = ref("")
 const overlayBaseUrl = ref("")
 const logPath = ref("")
+const systemFonts = ref(["Microsoft YaHei", "Noto Sans SC", "Segoe UI", "Arial", "sans-serif"])
 const coverImageReady = ref(false)
 const coverImageRef = ref(null)
 const coverCrop = reactive({
@@ -833,9 +867,7 @@ onMounted(async () => {
     if (store.isLoggedIn) {
       store.loadRoom()
       store.loadManagerList().catch(() => {})
-      if (!store.live.isLive) {
-        store.loadTranscodeInfo().catch(() => {})
-      }
+      store.loadTranscodeInfo().catch(() => {})
     }
   }, 8000)
 })
@@ -850,6 +882,15 @@ async function initializeNativeRuntime() {
     getOverlayBaseUrl(),
     getLogPath(),
   ])
+  getSystemFonts().then((fonts) => {
+    if (Array.isArray(fonts) && fonts.length) {
+      systemFonts.value = fonts
+      if (!fonts.includes(store.overlay.fontFamily)) {
+        store.overlay.fontFamily = fonts.includes("Microsoft YaHei") ? "Microsoft YaHei" : fonts[0]
+        store.persist()
+      }
+    }
+  }).catch(() => {})
 
   if (backendPortResult.status === "fulfilled" && Number(backendPortResult.value)) {
     const backendUrl = `ws://127.0.0.1:${Number(backendPortResult.value)}/`
@@ -939,6 +980,15 @@ async function openCover() {
   if (file) {
     store.setCoverFile(file)
   }
+}
+
+function openLiveRoom() {
+  if (!store.userId) {
+    showToast("当前没有主播 UID")
+    return
+  }
+  const url = `https://live.acfun.cn/live/${store.userId}`
+  run(() => openExternalURL(url), "已打开网页直播间")
 }
 
 function handleCoverInput() {
@@ -1201,9 +1251,13 @@ function encodeBase64Url(value) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")
 }
 
-function formatTime(seconds) {
-  const date = new Date(Number(seconds || Date.now()) * 1000)
+function formatTime(value) {
+  const date = new Date(Number(value || Date.now()) * 1000)
   return date.toLocaleTimeString()
+}
+
+function displayCount(value) {
+  return value === undefined || value === null || value === "" ? "-" : value
 }
 
 function highlightAcfun(text) {
