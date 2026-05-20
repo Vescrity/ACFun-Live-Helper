@@ -110,3 +110,13 @@ npm run test:backend-client
 ```text
 https://github.com/epstomai/ACFun-Live-Helper/releases
 ```
+
+## 开源协议
+
+本项目采用 **[GNU GPL v3](LICENSE)** 开源协议进行授权分发。
+
+依据 GPL v3 协议规范，任何基于本项目的分发、修改与二次开发行为，均需**保持开源**并沿用 GPL v3 协议。
+
+### 致谢
+
+特别感谢 **[acfundanmu](https://github.com/orzogc/acfundanmu)** 开源项目及原作者 **@orzogc** 的杰出贡献！本项目核心的 A 站弹幕通信解析基于该项目构建，使得助手能够拥有极高纯度与强健的通信连接能力。

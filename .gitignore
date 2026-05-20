@@ -54,6 +54,11 @@ lerna-debug.log*
 *.md
 *.txt
 
+# Do not ignore tracked project documentations to allow tools editing
+!README.md
+!ToDo.md
+!LICENSE
+
 # Backup / build artifacts
 *.bak
 *.syso
