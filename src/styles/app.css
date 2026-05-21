@@ -3425,10 +3425,9 @@ select:focus {
 }
 
 /* 鼠标穿透模式：窗口对鼠标完全不响应，必须靠全局热键退出。
-   视觉上用品牌粉色虚线边框 + 右上角徽标提示，让用户清楚当前不可点击。 */
+   视觉上用右上角徽标提示，让用户清楚当前不可点击。 */
 .float-danmaku-container.is-click-through {
-  border: 1px dashed var(--accent, #fd4c5d);
-  box-shadow: 0 0 0 1px rgba(253, 76, 93, 0.2), 0 0 24px rgba(253, 76, 93, 0.16);
+  box-shadow: 0 0 24px rgba(253, 76, 93, 0.16);
 }
 .float-danmaku-container.is-click-through::after {
   content: "👻 穿透中 · " attr(data-hotkey-label) " 退出";
