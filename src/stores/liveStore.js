@@ -829,6 +829,7 @@ export const useLiveStore = defineStore("live", {
         { name: "直播分类", run: () => this.loadLiveTypes() },
         { name: "直播间信息", run: () => this.loadRoom() },
         { name: "转码信息", run: () => this.loadTranscodeInfo() },
+        { name: "录像剪辑权限", run: () => this.loadLiveCutStatus() },
       ]
       for (const job of jobs) {
         try {
@@ -1189,10 +1190,14 @@ export const useLiveStore = defineStore("live", {
       }
     },
     // 设置"是否允许观众剪辑本次直播录像"（SET_LIVE_CUT_STATUS）。
+    // A 站后端限制：主播直播时无法修改（错误码 127017），需在开播前或关播后调用。
     // 成功后乐观更新本地 status，失败抛出错误由 UI 决定是否回滚。
     async setLiveCutCanCut(canCut) {
       if (!this.userId) {
         throw new Error("未登录，无法修改录像剪辑权限")
+      }
+      if (this.live.isLive) {
+        throw new Error("直播中无法更改剪辑设置，请在开播前或关播后修改")
       }
       const next = Boolean(canCut)
       await this.request(BackendTypes.SET_LIVE_CUT_STATUS, { canCut: next })

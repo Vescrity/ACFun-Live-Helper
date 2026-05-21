@@ -1318,6 +1318,47 @@ select:focus {
   /* 复用 .checkbox-label 的尺寸；这里只调字号与本行其它元素一致 */
   font-size: 12px;
 }
+.live-cut-hint {
+  margin-left: 4px;
+  color: var(--muted, #8c8089);
+  font-size: 11px;
+  font-weight: 400;
+}
+/* 账号页的剪辑权限行：与上方个人信息区拉开间距，与下方登出按钮也保持节奏 */
+.account-live-cut-row {
+  margin: 14px 0 12px;
+}
+/* 开播页只读状态徽标 */
+.live-cut-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--surface-soft, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  cursor: help;
+  user-select: none;
+}
+.live-cut-status .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.live-cut-status.on {
+  color: #5bd083;
+  border-color: rgba(91, 208, 131, 0.32);
+  background: rgba(91, 208, 131, 0.08);
+}
+.live-cut-status.off {
+  color: #c79280;
+  border-color: rgba(199, 146, 128, 0.28);
+  background: rgba(199, 146, 128, 0.06);
+}
 
 .qr-login-card {
   display: flex;
@@ -3291,8 +3332,10 @@ select:focus {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: 100vw;
-  height: 100vh;
+  /* 用 CSS variable 反向抵消父级 zoom：渲染后 = viewport × (1/scale) × scale = viewport，
+     避免 zoom > 1 时出现滚动条把 footer 裁掉 */
+  width: calc(100vw / var(--float-scale, 1));
+  height: calc(100vh / var(--float-scale, 1));
   backdrop-filter: blur(18px) saturate(0.92);
   -webkit-backdrop-filter: blur(18px) saturate(0.92);
   color: #ffffff;
@@ -3980,4 +4023,44 @@ html.is-float-window #app {
 .login-form-stacked {
   grid-template-columns: 1fr !important;
   gap: 12px; /* 稍微拉大间距，显得更加开阔、透气、不容易点错 */
+}
+
+/* 悬浮弹幕窗 — 缩放比例 HUD */
+.float-scale-hud {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 22px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  user-select: none;
+  z-index: 9999;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.theme-light .float-scale-hud,
+.float-scale-hud.theme-light {
+  background: rgba(255, 255, 255, 0.82);
+  color: #2a2128;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.float-scale-hud-fade-enter-active,
+.float-scale-hud-fade-leave-active {
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.float-scale-hud-fade-enter-from,
+.float-scale-hud-fade-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.92);
 }

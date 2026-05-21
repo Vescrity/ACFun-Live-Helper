@@ -15,7 +15,9 @@
         ? 'transparent'
         : store.ui.theme === 'light' 
           ? `rgba(255, 250, 250, ${floatOpacity / 100})` 
-          : `rgba(18, 12, 16, ${floatOpacity / 100})` 
+          : `rgba(18, 12, 16, ${floatOpacity / 100})`,
+      zoom: floatScale,
+      '--float-scale': floatScale,
     }"
   >
     <div class="float-header-hotspot" style="--wails-draggable: drag;" @mousedown="handleWindowDrag"></div>
@@ -247,6 +249,25 @@
                     <div><dt>粉丝</dt><dd>{{ store.userProfile.fansCount || "-" }}</dd></div>
                     <div><dt>获赞</dt><dd>{{ store.userProfile.likeCount || "-" }}</dd></div>
                   </dl>
+                </div>
+
+                <!-- 录像剪辑权限：开播前 / 关播后可改，直播中只读（A 站后端限制） -->
+                <div class="live-cut-row account-live-cut-row">
+                  <span class="live-cut-label">录像剪辑权限</span>
+                  <label
+                    class="checkbox-label live-cut-toggle"
+                    :title="store.live.isLive ? '直播中无法修改，关播后再调整' : '勾选后，本次开播的录像允许观众下载剪辑'"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="store.live.liveCutInfo.status"
+                      :disabled="liveCutBusy || store.live.isLive"
+                      @change="onToggleLiveCut"
+                    />
+                    <span>允许观众剪辑录像</span>
+                    <span v-if="store.live.isLive" class="live-cut-hint">（直播中只读）</span>
+                    <span v-else class="live-cut-hint">（仅在未开播时可修改）</span>
+                  </label>
                 </div>
 
                 <div class="button-row">
@@ -660,19 +681,19 @@
           </div>
 
           <!-- 直播录像剪辑：直播中显示一行
-               - checkbox 对应 SET_LIVE_CUT_STATUS（是否允许观众剪辑本次录像）
+               - 状态徽标对应 GET_LIVE_CUT_STATUS（是否允许观众剪辑本次录像），仅展示
+                 想修改请到「账号」页（A 站后端不允许直播中改）
                - 右侧按钮对应 GET_LIVE_CUT_INFO 返回的 url / redirectURL，仅在拿到时可点击 -->
           <div v-if="store.live.isLive" class="live-cut-row">
             <span class="live-cut-label">本场录像</span>
-            <label class="checkbox-label live-cut-toggle">
-              <input
-                type="checkbox"
-                :checked="store.live.liveCutInfo.status"
-                :disabled="liveCutBusy"
-                @change="onToggleLiveCut"
-              />
-              <span>允许观众剪辑</span>
-            </label>
+            <span
+              class="live-cut-status"
+              :class="{ on: store.live.liveCutInfo.status, off: !store.live.liveCutInfo.status }"
+              title="直播中无法修改剪辑权限，请到「账号」页在未开播时调整"
+            >
+              <span class="dot"></span>
+              {{ store.live.liveCutInfo.status ? "允许观众剪辑" : "仅主播可剪辑" }}
+            </span>
             <button
               class="text-button"
               :disabled="!store.live.liveCutInfo.redirectURL && !store.live.liveCutInfo.url"
@@ -1334,6 +1355,18 @@
       </div>
     </main>
   </div>
+
+  <!-- 缩放比例 HUD（Teleport 到 body 避免被悬浮容器的 zoom 二次缩放；放在末尾不打断 v-if/v-else 相邻） -->
+  <Teleport to="body">
+    <transition name="float-scale-hud-fade">
+      <div
+        v-if="floatDanmakuActive && showFloatScaleHud"
+        :class="['float-scale-hud', `theme-${store.ui.theme}`]"
+      >
+        {{ Math.round(floatScale * 100) }}%
+      </div>
+    </transition>
+  </Teleport>
 </template>
 
 <script setup>
@@ -1431,12 +1464,32 @@ const store = useLiveStore()
 
 // === 悬浮置顶弹幕窗状态与操作 ===
 const FLOAT_OPACITY_STORAGE_KEY = "aclivehelper.floatDanmaku.opacity"
+const FLOAT_SCALE_STORAGE_KEY = "aclivehelper.floatDanmaku.scale"
+const FLOAT_BASE_WIDTH = 360
+const FLOAT_BASE_HEIGHT = 580
+const FLOAT_MIN_SCALE = 0.7
+const FLOAT_MAX_SCALE = 2.0
+const FLOAT_SCALE_STEP = 0.1
 const floatDanmakuActive = ref(false)
 const showFloatReply = ref(true)
 const showFloatOpacityControl = ref(true)
 const floatCommentText = ref("")
 const savedFloatOpacity = Number(localStorage.getItem(FLOAT_OPACITY_STORAGE_KEY))
 const floatOpacity = ref(Number.isFinite(savedFloatOpacity) ? Math.min(100, Math.max(0, savedFloatOpacity)) : 72)
+// 一次性迁移：早期版本 immediate watch 把 Number(null)=0 clamp 到 0.7 写入存储，导致默认值被污染
+const FLOAT_SCALE_MIGRATION_KEY = "aclivehelper.floatDanmaku.scale.migrated"
+if (!localStorage.getItem(FLOAT_SCALE_MIGRATION_KEY)) {
+  if (localStorage.getItem(FLOAT_SCALE_STORAGE_KEY) === "0.7") {
+    localStorage.removeItem(FLOAT_SCALE_STORAGE_KEY)
+  }
+  localStorage.setItem(FLOAT_SCALE_MIGRATION_KEY, "1")
+}
+const savedFloatScale = parseFloat(localStorage.getItem(FLOAT_SCALE_STORAGE_KEY) ?? "")
+const floatScale = ref(
+  Number.isFinite(savedFloatScale)
+    ? Math.min(FLOAT_MAX_SCALE, Math.max(FLOAT_MIN_SCALE, savedFloatScale))
+    : 1,
+)
 const isAlwaysOnTop = ref(true)
 const isMiniWindowProcess = ref(false)
 const isDraggingWindow = ref(false)
@@ -1450,6 +1503,87 @@ watch(floatOpacity, (value) => {
   }
   localStorage.setItem(FLOAT_OPACITY_STORAGE_KEY, String(opacity))
 }, { immediate: true })
+
+function setFloatScale(value) {
+  const raw = Number(value)
+  const safe = Number.isFinite(raw) ? raw : 1
+  const next = Math.round(Math.min(FLOAT_MAX_SCALE, Math.max(FLOAT_MIN_SCALE, safe)) * 100) / 100
+  floatScale.value = next
+}
+
+let floatScaleResizeRaf = 0
+const showFloatScaleHud = ref(false)
+let floatScaleHudTimer = 0
+watch(floatScale, (value) => {
+  localStorage.setItem(FLOAT_SCALE_STORAGE_KEY, String(value))
+  if (floatDanmakuActive.value) {
+    showFloatScaleHud.value = true
+    if (floatScaleHudTimer) clearTimeout(floatScaleHudTimer)
+    floatScaleHudTimer = window.setTimeout(() => {
+      showFloatScaleHud.value = false
+    }, 1200)
+  }
+  if (!floatDanmakuActive.value || !isMiniWindowProcess.value) return
+  if (floatScaleResizeRaf) cancelAnimationFrame(floatScaleResizeRaf)
+  floatScaleResizeRaf = requestAnimationFrame(() => {
+    floatScaleResizeRaf = 0
+    setWindowSize(
+      Math.round(FLOAT_BASE_WIDTH * floatScale.value),
+      Math.round(FLOAT_BASE_HEIGHT * floatScale.value),
+    ).catch(() => {})
+  })
+})
+
+function handleFloatWheel(e) {
+  if (!floatDanmakuActive.value) return
+  if (!e.ctrlKey && !e.metaKey) return
+  e.preventDefault()
+  const direction = e.deltaY < 0 ? 1 : -1
+  setFloatScale(floatScale.value + direction * FLOAT_SCALE_STEP)
+}
+
+function handleFloatScaleShortcut(e) {
+  if (!floatDanmakuActive.value) return
+  if (!e.ctrlKey && !e.metaKey) return
+  if (e.key === "0") {
+    e.preventDefault()
+    setFloatScale(1)
+  } else if (e.key === "=" || e.key === "+") {
+    e.preventDefault()
+    setFloatScale(floatScale.value + FLOAT_SCALE_STEP)
+  } else if (e.key === "-" || e.key === "_") {
+    e.preventDefault()
+    setFloatScale(floatScale.value - FLOAT_SCALE_STEP)
+  }
+}
+
+// Ctrl + 鼠标中键拖拽：无极缩放（每像素 0.005，上滑放大下滑缩小）
+const FLOAT_DRAG_SCALE_SENSITIVITY = 0.005
+let floatDragScaleState = null
+
+function handleFloatMouseDown(e) {
+  if (!floatDanmakuActive.value) return
+  if (e.button !== 1) return
+  if (!e.ctrlKey && !e.metaKey) return
+  e.preventDefault()
+  e.stopPropagation()
+  floatDragScaleState = { startY: e.clientY, startScale: floatScale.value }
+  document.body.style.cursor = "ns-resize"
+}
+
+function handleFloatMouseMove(e) {
+  if (!floatDragScaleState) return
+  e.preventDefault()
+  const dy = floatDragScaleState.startY - e.clientY
+  setFloatScale(floatDragScaleState.startScale + dy * FLOAT_DRAG_SCALE_SENSITIVITY)
+}
+
+function handleFloatMouseUp(e) {
+  if (!floatDragScaleState) return
+  if (e && e.button !== 1 && e.type !== "mouseleave" && e.type !== "blur") return
+  floatDragScaleState = null
+  document.body.style.cursor = ""
+}
 
 async function toggleFloatAlwaysOnTop() {
   try {
@@ -2355,6 +2489,13 @@ watch(() => store.ui.theme, (theme) => {
 onMounted(async () => {
   updateExtremeNarrowSidebar()
   window.addEventListener("resize", updateExtremeNarrowSidebar)
+  window.addEventListener("wheel", handleFloatWheel, { passive: false })
+  window.addEventListener("keydown", handleFloatScaleShortcut)
+  window.addEventListener("mousedown", handleFloatMouseDown, true)
+  window.addEventListener("mousemove", handleFloatMouseMove)
+  window.addEventListener("mouseup", handleFloatMouseUp)
+  window.addEventListener("blur", handleFloatMouseUp)
+  document.addEventListener("mouseleave", handleFloatMouseUp)
   await initializeNativeRuntime()
   store.restoreObsConnection().catch(() => {})
   await store.restoreSession()
@@ -2378,6 +2519,13 @@ onMounted(async () => {
   isMiniWindowProcess.value = mini
   if (mini) {
     floatDanmakuActive.value = true
+    // 按上次保存的缩放比例同步原生窗口尺寸
+    if (floatScale.value !== 1) {
+      setWindowSize(
+        Math.round(FLOAT_BASE_WIDTH * floatScale.value),
+        Math.round(FLOAT_BASE_HEIGHT * floatScale.value),
+      ).catch(() => {})
+    }
     await syncFloatRuntimeState()
     await ensureFloatDanmuStarted()
     await syncFloatTheme()
@@ -2399,6 +2547,13 @@ onUnmounted(() => {
   window.clearInterval(floatRuntimeTimer)
   window.clearTimeout(sidebarToggleFlashTimer)
   window.removeEventListener("resize", updateExtremeNarrowSidebar)
+  window.removeEventListener("wheel", handleFloatWheel)
+  window.removeEventListener("keydown", handleFloatScaleShortcut)
+  window.removeEventListener("mousedown", handleFloatMouseDown, true)
+  window.removeEventListener("mousemove", handleFloatMouseMove)
+  window.removeEventListener("mouseup", handleFloatMouseUp)
+  window.removeEventListener("blur", handleFloatMouseUp)
+  document.removeEventListener("mouseleave", handleFloatMouseUp)
 })
 
 async function syncFloatTheme() {
