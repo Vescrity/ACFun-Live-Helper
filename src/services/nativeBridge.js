@@ -108,6 +108,40 @@ export async function isMiniMode() {
   return app && app.IsMiniMode ? app.IsMiniMode() : false
 }
 
+// 切换 mini 窗口的鼠标穿透模式（仅 mini 进程有效）。
+// 启用后窗口对鼠标完全透明，鼠标事件直接落到下层（如全屏游戏），
+// 退出穿透必须靠全局热键（默认 Ctrl+Alt+Shift+G，可在 mini footer 改键）。
+export async function setMouseClickThrough(enable) {
+  const app = wailsApp()
+  if (app && app.SetMouseClickThrough) {
+    return app.SetMouseClickThrough(Boolean(enable))
+  }
+}
+
+// 重新注册全局热键。
+// mods: 修饰键位掩码 — 1=Alt, 2=Ctrl, 4=Shift, 8=Win（多个用 OR 组合）
+// vk: Windows Virtual Key Code（字母 A-Z = 0x41-0x5A, 数字 0-9 = 0x30-0x39, F1-F12 = 0x70-0x7B）
+export async function setMouseClickThroughHotkey(mods, vk) {
+  const app = wailsApp()
+  if (app && app.SetMouseClickThroughHotkey) {
+    return app.SetMouseClickThroughHotkey(Number(mods) || 0, Number(vk) || 0)
+  }
+}
+
+// 监听后端发出的「全局热键切换穿透」事件，返回 unsubscribe 函数。
+export function onClickThroughToggle(handler) {
+  const runtime = window.runtime
+  if (!runtime || !runtime.EventsOn) {
+    return () => {}
+  }
+  runtime.EventsOn("mini:click-through-toggle", () => {
+    try { handler() } catch {}
+  })
+  return () => {
+    if (runtime.EventsOff) runtime.EventsOff("mini:click-through-toggle")
+  }
+}
+
 export async function launchMiniWindow() {
   const app = wailsApp()
   if (app && app.LaunchMiniWindow) {

@@ -3365,6 +3365,89 @@ select:focus {
   background: transparent !important;
 }
 
+/* 穿透热键自定义行（mini footer 内，与透明度滑杆同款排版，极简设计） */
+.float-hotkey-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 16px;
+  margin-bottom: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #a698a0;
+  user-select: none;
+}
+.theme-light .float-hotkey-control {
+  color: #766b72;
+}
+.theme-light.is-transparent-readable .float-hotkey-control {
+  color: #d8cdd2;
+}
+
+.float-hotkey-compact-btn {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  cursor: pointer;
+  transition: all 120ms ease;
+  user-select: none;
+}
+.float-hotkey-compact-btn:hover {
+  background: rgba(253, 76, 93, 0.08);
+  border-color: rgba(253, 76, 93, 0.4);
+  color: var(--accent, #fd4c5d);
+}
+.float-hotkey-compact-btn.capturing {
+  background: rgba(253, 76, 93, 0.16);
+  border-style: solid;
+  border-color: var(--accent, #fd4c5d);
+  color: var(--accent, #fd4c5d);
+  animation: float-selected-breathe 1200ms ease-out infinite;
+}
+.theme-light .float-hotkey-compact-btn {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.16);
+  color: #120c10;
+}
+.theme-light.is-transparent-readable .float-hotkey-compact-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
+
+/* 鼠标穿透模式：窗口对鼠标完全不响应，必须靠全局热键退出。
+   视觉上用品牌粉色虚线边框 + 右上角徽标提示，让用户清楚当前不可点击。 */
+.float-danmaku-container.is-click-through {
+  border: 1px dashed var(--accent, #fd4c5d);
+  box-shadow: 0 0 0 1px rgba(253, 76, 93, 0.2), 0 0 24px rgba(253, 76, 93, 0.16);
+}
+.float-danmaku-container.is-click-through::after {
+  content: "👻 穿透中 · " attr(data-hotkey-label) " 退出";
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 60;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  background: rgba(253, 76, 93, 0.85);
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: 0.02em;
+}
+
 .float-header-hotspot {
   position: fixed;
   top: 6px;
@@ -3380,6 +3463,7 @@ select:focus {
   display: flex;
   align-items: center;
   gap: 8px;
+  height: 16px;
   margin-bottom: 8px;
   font-size: 10px;
   font-weight: 500;

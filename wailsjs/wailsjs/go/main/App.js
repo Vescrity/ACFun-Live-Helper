@@ -82,6 +82,14 @@ export function SetAlwaysOnTop(arg1) {
   return window['go']['main']['App']['SetAlwaysOnTop'](arg1);
 }
 
+export function SetMouseClickThrough(arg1) {
+  return window['go']['main']['App']['SetMouseClickThrough'](arg1);
+}
+
+export function SetMouseClickThroughHotkey(arg1, arg2) {
+  return window['go']['main']['App']['SetMouseClickThroughHotkey'](arg1, arg2);
+}
+
 export function SetSharedFloatState(arg1) {
   return window['go']['main']['App']['SetSharedFloatState'](arg1);
 }

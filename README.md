@@ -8,7 +8,7 @@
 
 面向 AcFun 直播主播的现代化桌面端助手。基于 **Wails v2 + Go + Vue 3 + Pinia** 构建，内嵌 `acfunlive-backend`，无需额外启动后端进程。
 
-> **当前版本**：`v1.0.0-rc.1` — [前往 Releases 下载](https://github.com/epstomai/ACFun-Live-Helper/releases/latest)
+> **当前版本**：`v1.0.0-rc.3` — [前往 Releases 下载](https://github.com/epstomai/ACFun-Live-Helper/releases/latest)
 
 ## 目录
 
@@ -54,7 +54,7 @@
 
 ### 悬浮 & 主题
 - 暗 / 亮主题切换，自适应配色
-- 悬浮置顶弹幕窗（始终在最前），可与主窗共存
+- 悬浮置顶弹幕窗（始终在最前），可与主窗共存；**支持一键进入鼠标穿透模式（并可自定义全局热键退出），防止全屏游戏中抢夺鼠标焦点**，完美实现不透明度与热键微调
 - 侧栏可折叠为图标、手动展开
 
 ### 系统

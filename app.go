@@ -82,6 +82,14 @@ func (a *App) startup(ctx context.Context) {
 
 	a.stopStatsChan = make(chan struct{})
 	go a.trackSystemStats()
+
+	// 仅悬浮 mini 进程注册全局热键（默认 Ctrl+Alt+Shift+G），用于切换鼠标穿透模式。
+	// 穿透模式下窗口不响应点击，必须靠全局热键退出。前端可通过 SetMouseClickThroughHotkey 改键。
+	if a.isMini {
+		startGlobalHotkey(uintptr(modCtrl|modAlt|modShift), uintptr(vkG), func() {
+			wailsRuntime.EventsEmit(a.ctx, "mini:click-through-toggle")
+		})
+	}
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -1028,6 +1036,34 @@ func (a *App) SetWindowSize(width, height int) {
 // IsMiniMode 返回当前是否是精简悬浮进程
 func (a *App) IsMiniMode() bool {
 	return a.isMini
+}
+
+// SetMouseClickThrough 启用 / 关闭悬浮窗的鼠标穿透模式（仅 mini 进程有效）。
+// 启用后窗口对鼠标完全透明，鼠标事件直接落到下层窗口（如全屏游戏），
+// 用全局热键退出穿透（默认 Ctrl+Alt+Shift+G，前端可改）。
+func (a *App) SetMouseClickThrough(enable bool) error {
+	if !a.isMini {
+		return nil
+	}
+	hwnd := findOwnVisibleHWND()
+	if hwnd == 0 {
+		return errors.New("mini window handle not found")
+	}
+	return applyMouseClickThrough(hwnd, enable)
+}
+
+// SetMouseClickThroughHotkey 重新注册全局热键。
+// mods 是 MOD_CONTROL/ALT/SHIFT/WIN 的位组合 (1=Alt, 2=Ctrl, 4=Shift, 8=Win)。
+// vk 是 Virtual Key Code（如 'G'=0x47, 'A'=0x41, F1=0x70）。
+// 仅 mini 进程有效。
+func (a *App) SetMouseClickThroughHotkey(mods uint32, vk uint32) error {
+	if !a.isMini {
+		return nil
+	}
+	if vk == 0 {
+		return errors.New("invalid virtual key code")
+	}
+	return updateGlobalHotkey(uintptr(mods), uintptr(vk))
 }
 
 // LaunchMiniWindow 原生拉起全新的带置顶的悬浮独立弹幕窗口进程

@@ -8,6 +8,7 @@
         'is-dragging-window': isDraggingWindow,
         'is-fully-transparent': floatOpacity === 0,
         'is-transparent-readable': store.ui.theme === 'light' && floatOpacity < 60,
+        'is-click-through': isClickThrough,
       },
     ]"
     :style="{ 
@@ -19,6 +20,7 @@
       zoom: floatScale,
       '--float-scale': floatScale,
     }"
+    :data-hotkey-label="clickThroughHotkey.label"
   >
     <div class="float-header-hotspot" style="--wails-draggable: drag;" @mousedown="handleWindowDrag"></div>
     <!-- 悬浮窗头部操作栏（通过 Wails 官方双重保险拖拽机制） -->
@@ -41,13 +43,23 @@
         >
           <Pin :size="13" />
         </button>
+        <!-- 鼠标穿透模式：用于无边框全屏游戏中防止鼠标被弹幕窗截胡 -->
+        <button
+          class="float-action-btn"
+          :class="{ active: isClickThrough }"
+          :title="isClickThrough ? `退出穿透（当前热键 ${clickThroughHotkey.label}）` : '进入鼠标穿透 — 用于无边框全屏游戏'"
+          @click="toggleClickThrough"
+        >
+          <Ghost :size="13" />
+        </button>
         <button 
           class="float-action-btn" 
-          :class="{ active: showFloatOpacityControl }" 
-          :title="showFloatOpacityControl ? '隐藏透明度设置' : '显示透明度设置'"
-          @click="showFloatOpacityControl = !showFloatOpacityControl"
+          :class="{ active: floatSettingsMode !== 0 }" 
+          :title="floatSettingsMode === 0 ? '显示不透明度设置' : floatSettingsMode === 1 ? '切换至穿透热键设置' : '关闭设置'"
+          @click="cycleFloatSettingsMode"
         >
-          <SlidersHorizontal :size="13" />
+          <SlidersHorizontal v-if="floatSettingsMode <= 1" :size="13" />
+          <Ghost v-else :size="13" />
         </button>
         <!-- 一键折叠/展开回复框 -->
         <button 
@@ -80,9 +92,9 @@
     </main>
 
     <!-- 底部回复栏 (可一键收起) -->
-    <footer v-if="showFloatReply || showFloatOpacityControl" class="float-footer">
+    <footer v-if="showFloatReply || floatSettingsMode !== 0" class="float-footer">
       <!-- 不透明度科技感滑杆 -->
-      <div v-if="showFloatOpacityControl" class="float-opacity-control">
+      <div v-if="floatSettingsMode === 1" class="float-opacity-control">
         <span class="opacity-label">透明度</span>
         <input 
           v-model.number="floatOpacity" 
@@ -94,6 +106,20 @@
           :style="{ '--opacity-fill': `${floatOpacity}%` }"
         />
         <span class="opacity-value">{{ floatOpacity }}%</span>
+      </div>
+      <!-- 穿透热键自定义：极其精简，字体样式与透明度行严格统一 -->
+      <div v-if="floatSettingsMode === 2" class="float-hotkey-control">
+        <span>穿透热键</span>
+        <button
+          class="float-hotkey-compact-btn"
+          :class="{ capturing: hotkeyCapturing }"
+          :title="hotkeyCapturing ? '按下组合键，Esc 取消' : '点击修改鼠标穿透全局热键'"
+          @click="startHotkeyCapture"
+          @blur="cancelHotkeyCapture"
+        >
+          <span v-if="hotkeyCapturing">请按下组合键... (Esc 取消)</span>
+          <span v-else>{{ clickThroughHotkey.label }}</span>
+        </button>
       </div>
       <div v-if="showFloatReply" class="float-reply-box">
         <input 
@@ -1427,6 +1453,7 @@ import {
   CheckCircle,
   XCircle,
   Pin,
+  Ghost,
   Layers,
   MessageSquare,
   SlidersHorizontal,
@@ -1458,6 +1485,9 @@ import {
   getSharedTheme,
   setSharedFloatState,
   getSharedFloatState,
+  setMouseClickThrough,
+  setMouseClickThroughHotkey,
+  onClickThroughToggle,
 } from "@/services/nativeBridge"
 
 const store = useLiveStore()
@@ -1472,7 +1502,16 @@ const FLOAT_MAX_SCALE = 2.0
 const FLOAT_SCALE_STEP = 0.1
 const floatDanmakuActive = ref(false)
 const showFloatReply = ref(true)
-const showFloatOpacityControl = ref(true)
+const floatSettingsMode = ref(1) // 0: 隐藏, 1: 不透明度设置, 2: 穿透热键设置
+function cycleFloatSettingsMode() {
+  if (floatSettingsMode.value === 0) {
+    floatSettingsMode.value = 1
+  } else if (floatSettingsMode.value === 1) {
+    floatSettingsMode.value = 2
+  } else {
+    floatSettingsMode.value = 0
+  }
+}
 const floatCommentText = ref("")
 const savedFloatOpacity = Number(localStorage.getItem(FLOAT_OPACITY_STORAGE_KEY))
 const floatOpacity = ref(Number.isFinite(savedFloatOpacity) ? Math.min(100, Math.max(0, savedFloatOpacity)) : 72)
@@ -1593,6 +1632,114 @@ async function toggleFloatAlwaysOnTop() {
     showToast(nextState ? "窗口已置顶" : "已取消置顶")
   } catch (err) {
     console.error("切换置顶失败:", err)
+  }
+}
+
+// 鼠标穿透模式（用于无边框全屏游戏中避免鼠标被弹幕窗截胡）
+const FLOAT_CLICK_THROUGH_KEY = "aclivehelper.floatDanmaku.clickThrough"
+const FLOAT_HOTKEY_KEY = "aclivehelper.floatDanmaku.clickThroughHotkey"
+// Windows MOD_* 位掩码：与后端 modAlt/modCtrl/modShift/modWin 对应
+const HK_MOD_ALT = 1
+const HK_MOD_CTRL = 2
+const HK_MOD_SHIFT = 4
+const HK_MOD_WIN = 8
+// 默认 Ctrl+Alt+Shift+G
+const DEFAULT_HOTKEY = { mods: HK_MOD_CTRL | HK_MOD_ALT | HK_MOD_SHIFT, vk: 0x47, label: "Ctrl+Alt+Shift+G" }
+
+const isClickThrough = ref(false)
+const clickThroughHotkey = ref(loadHotkey())
+const hotkeyCapturing = ref(false)
+
+function loadHotkey() {
+  try {
+    const raw = localStorage.getItem(FLOAT_HOTKEY_KEY)
+    if (!raw) return { ...DEFAULT_HOTKEY }
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed.mods === "number" && typeof parsed.vk === "number" && parsed.vk > 0) {
+      return { mods: parsed.mods, vk: parsed.vk, label: hotkeyLabel(parsed.mods, parsed.vk) }
+    }
+  } catch {}
+  return { ...DEFAULT_HOTKEY }
+}
+function hotkeyLabel(mods, vk) {
+  const parts = []
+  if (mods & HK_MOD_CTRL) parts.push("Ctrl")
+  if (mods & HK_MOD_ALT) parts.push("Alt")
+  if (mods & HK_MOD_SHIFT) parts.push("Shift")
+  if (mods & HK_MOD_WIN) parts.push("Win")
+  parts.push(vkToLabel(vk))
+  return parts.join("+")
+}
+function vkToLabel(vk) {
+  if (vk >= 0x41 && vk <= 0x5A) return String.fromCharCode(vk)              // A-Z
+  if (vk >= 0x30 && vk <= 0x39) return String.fromCharCode(vk)              // 0-9
+  if (vk >= 0x70 && vk <= 0x7B) return "F" + (vk - 0x70 + 1)                // F1-F12
+  return "?"
+}
+// 把 KeyboardEvent.code 映射成 Windows VK code；不支持时返回 0
+function codeToVK(code) {
+  if (typeof code !== "string") return 0
+  if (/^Key[A-Z]$/.test(code)) return code.charCodeAt(3)                    // KeyG -> 0x47
+  if (/^Digit[0-9]$/.test(code)) return code.charCodeAt(5)                  // Digit1 -> 0x31
+  const m = code.match(/^F([1-9]|1[0-2])$/)
+  if (m) return 0x70 + parseInt(m[1], 10) - 1                               // F1-F12
+  return 0
+}
+
+async function setClickThroughMode(enable) {
+  const next = Boolean(enable)
+  try {
+    await setMouseClickThrough(next)
+    isClickThrough.value = next
+    localStorage.setItem(FLOAT_CLICK_THROUGH_KEY, next ? "1" : "0")
+    showToast(next ? `已进入穿透模式 — ${clickThroughHotkey.value.label} 退出` : "已退出穿透模式")
+  } catch (err) {
+    console.error("切换鼠标穿透失败:", err)
+    showToast("切换穿透失败")
+  }
+}
+function toggleClickThrough() {
+  setClickThroughMode(!isClickThrough.value)
+}
+
+// 启动捕获模式：在按钮聚焦后下一次按下"组合键"被捕获并保存
+function startHotkeyCapture() {
+  hotkeyCapturing.value = true
+}
+function cancelHotkeyCapture() {
+  hotkeyCapturing.value = false
+}
+async function handleHotkeyCapture(e) {
+  if (!hotkeyCapturing.value) return
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.key === "Escape") {
+    cancelHotkeyCapture()
+    showToast("已取消修改")
+    return
+  }
+  const vk = codeToVK(e.code)
+  if (vk === 0) return // 仅修饰键或不支持的键，等下一次按下
+  let mods = 0
+  if (e.ctrlKey) mods |= HK_MOD_CTRL
+  if (e.altKey) mods |= HK_MOD_ALT
+  if (e.shiftKey) mods |= HK_MOD_SHIFT
+  if (e.metaKey) mods |= HK_MOD_WIN
+  if (mods === 0) {
+    showToast("请至少加一个修饰键（Ctrl / Alt / Shift / Win）")
+    return
+  }
+  try {
+    await setMouseClickThroughHotkey(mods, vk)
+    const label = hotkeyLabel(mods, vk)
+    clickThroughHotkey.value = { mods, vk, label }
+    localStorage.setItem(FLOAT_HOTKEY_KEY, JSON.stringify({ mods, vk }))
+    showToast(`穿透热键已设为 ${label}`)
+  } catch (err) {
+    console.error("设置热键失败:", err)
+    showToast("设置热键失败，可能与系统/其他程序冲突")
+  } finally {
+    hotkeyCapturing.value = false
   }
 }
 
@@ -2531,6 +2678,20 @@ onMounted(async () => {
     await syncFloatTheme()
     floatThemeTimer = window.setInterval(syncFloatTheme, 500)
     floatRuntimeTimer = window.setInterval(syncFloatRuntimeState, 1000)
+
+    // 监听全局热键切换鼠标穿透
+    onClickThroughToggle(toggleClickThrough)
+    // 把保存的热键同步给后端（确保前后端一致；默认值幂等也无妨）
+    setMouseClickThroughHotkey(
+      clickThroughHotkey.value.mods,
+      clickThroughHotkey.value.vk,
+    ).catch(() => {})
+    // 全局 keydown 监听用于"按下捕获热键"，capture 阶段优先抢截
+    window.addEventListener("keydown", handleHotkeyCapture, true)
+    // 恢复上次的穿透偏好（仅当用户主动开启过才恢复，避免冷启动突然进入穿透）
+    if (localStorage.getItem(FLOAT_CLICK_THROUGH_KEY) === "1") {
+      setClickThroughMode(true)
+    }
   } else {
     setSharedTheme(store.ui.theme).catch(() => {})
     await publishFloatRuntimeState()
@@ -2554,6 +2715,7 @@ onUnmounted(() => {
   window.removeEventListener("mouseup", handleFloatMouseUp)
   window.removeEventListener("blur", handleFloatMouseUp)
   document.removeEventListener("mouseleave", handleFloatMouseUp)
+  window.removeEventListener("keydown", handleHotkeyCapture, true)
 })
 
 async function syncFloatTheme() {

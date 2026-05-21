@@ -42,6 +42,10 @@ export function SaveCoverImage(arg1:string):Promise<string>;
 
 export function SetAlwaysOnTop(arg1:boolean):Promise<void>;
 
+export function SetMouseClickThrough(arg1:boolean):Promise<void>;
+
+export function SetMouseClickThroughHotkey(arg1:number,arg2:number):Promise<void>;
+
 export function SetSharedFloatState(arg1:string):Promise<void>;
 
 export function SetSharedTheme(arg1:string):Promise<void>;
