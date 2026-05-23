@@ -9,8 +9,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "wails:dev": "wails dev",
-    "wails:build": "wails build",
+    "wails:dev": "wails dev -tags webkit2_41",
+    "wails:build": "wails build -tags webkit2_41",
     "wails:build:win": "wails build -platform windows/amd64",
     "test:backend-client": "node test/acfunBackend.test.mjs"
   },
