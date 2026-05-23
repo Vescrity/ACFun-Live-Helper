@@ -51,8 +51,9 @@ func main() {
 
 	mux := http.NewServeMux()
 	registerWebUIHandlers(mux, app)
-	fsrv := http.FileServer(http.Dir("dist"))
-	mux.Handle("/", fsrv)
+	// Serve embedded dist/ frontend (built via npm run build, embedded at compile time).
+	// No runtime dependency on disk directories.
+	mux.Handle("/", webuiRootHandler())
 
 	addr := listener.Addr().String()
 	server := &http.Server{

@@ -452,6 +452,12 @@ func (a *App) serveOverlayAsset(response http.ResponseWriter, request *http.Requ
 
 	response.Header().Set("Cache-Control", "no-store")
 
+	// Try embedded assets first (WebUI mode — compiled into the binary)
+	if serveEmbeddedAsset(response, request, assetPath) {
+		return
+	}
+
+	// Fallback: disk directories (development or Wails mode)
 	if served := serveDiskAsset(response, request, filepath.Join("public", assetPath)); served {
 		return
 	}
