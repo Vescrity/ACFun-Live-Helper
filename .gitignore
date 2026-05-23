@@ -37,6 +37,7 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+*.md5
 
 # Wails build artifacts
 /build/bin
