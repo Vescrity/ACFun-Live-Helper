@@ -12,6 +12,8 @@
     "wails:dev": "wails dev",
     "wails:build": "wails build",
     "wails:build:win": "wails build -platform windows/amd64",
+    "wails:build:linux": "wails build -platform linux/amd64",
+    "wails:build:mac": "wails build -platform darwin/universal",
     "test:backend-client": "node test/acfunBackend.test.mjs"
   },
   "dependencies": {
