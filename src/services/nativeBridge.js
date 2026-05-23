@@ -42,6 +42,22 @@ function wailsApp() {
     : null
 }
 
+// 通用状态持久化：后端文件存储（跨浏览器共享）
+export async function loadAppState() {
+  const app = wailsApp()
+  if (app && app.GetSharedState) return JSON.parse(app.GetSharedState() || "{}")
+  return (await apiGet('/state')) || {}
+}
+
+export async function saveAppState(state) {
+  const app = wailsApp()
+  if (app && app.SetSharedState) {
+    app.SetSharedState(JSON.stringify(state))
+    return
+  }
+  await apiPost('/state', JSON.stringify(state))
+}
+
 export async function openCoverFile() {
   const app = wailsApp()
   if (app && app.OpenCoverFile) return app.OpenCoverFile()
@@ -144,7 +160,8 @@ export async function setWindowSize(width, height) {
 export async function isMiniMode() {
   const app = wailsApp()
   if (app && app.IsMiniMode) return app.IsMiniMode()
-  return false
+  // WebUI: 路径以 /mini 开头即视为 mini 模式
+  return window.location.pathname.startsWith('/mini')
 }
 
 export async function setMouseClickThrough(enable) {
@@ -177,8 +194,8 @@ export function onClickThroughToggle(handler) {
 export async function launchMiniWindow() {
   const app = wailsApp()
   if (app && app.LaunchMiniWindow) return app.LaunchMiniWindow()
-  // WebUI: 后端打开新浏览器窗口
-  apiPost('/launch-mini')
+  // WebUI: 前端直接在新标签页打开 /mini
+  window.open('/mini', '_blank', 'noopener,noreferrer')
 }
 
 export async function setSharedTheme(theme) {

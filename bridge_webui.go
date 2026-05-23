@@ -5,7 +5,6 @@ package main
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"os/exec"
 	"runtime"
@@ -22,6 +21,7 @@ func registerWebUIHandlers(mux *http.ServeMux, app *App) {
 	mux.HandleFunc("/api/log-path", jsonHandler(func() any { return map[string]string{"path": app.GetLogPath()} }))
 	mux.HandleFunc("/api/theme", themeHandler(app))
 	mux.HandleFunc("/api/float-state", floatStateHandler(app))
+	mux.HandleFunc("/api/state", stateHandler(app))
 
 	mux.HandleFunc("/api/copy-text", methodHandler("POST", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -59,19 +59,6 @@ func registerWebUIHandlers(mux *http.ServeMux, app *App) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	mux.HandleFunc("/api/launch-mini", methodHandler("POST", func(w http.ResponseWriter, r *http.Request) {
-		// WebUI 模式：开新浏览器窗口 /mini
-		port := r.Host
-		if idx := strings.LastIndex(port, ":"); idx >= 0 {
-			port = port[idx:]
-		} else {
-			port = ":15369"
-		}
-		miniURL := "http://127.0.0.1" + port + "/mini"
-		openBrowserOnLinux(miniURL)
-		log.Printf("[WebUI] Opened mini window at %s", miniURL)
-		w.WriteHeader(http.StatusOK)
-	}))
 
 	mux.HandleFunc("/api/cover/save", methodHandler("POST", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -154,13 +141,24 @@ func floatStateHandler(app *App) http.HandlerFunc {
 	}
 }
 
-func openBrowserOnLinux(url string) {
-	switch runtime.GOOS {
-	case "windows":
-		_ = exec.Command("cmd", "/c", "start", url).Start()
-	case "darwin":
-		_ = exec.Command("open", url).Start()
-	default:
-		_ = exec.Command("xdg-open", url).Start()
+
+func stateHandler(app *App) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			data := app.GetSharedState()
+			if data == "" {
+				writeJSON(w, map[string]interface{}{})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(data))
+		case "POST":
+			body, _ := io.ReadAll(r.Body)
+			_ = app.SetSharedState(string(body))
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 	}
 }
