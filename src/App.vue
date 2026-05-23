@@ -247,6 +247,9 @@
           <button class="icon-button" title="刷新" @click="refreshCurrent">
             <RefreshCw :size="17" />
           </button>
+          <button v-if="!isMiniWindowProcess" class="icon-button" title="保存配置" @click="saveConfig">
+            <Save :size="17" />
+          </button>
           <button v-if="store.isLoggedIn" class="icon-button danger" title="登出" @click="store.logout">
             <LogOut :size="17" />
           </button>
@@ -1693,6 +1696,7 @@ import {
   SlidersHorizontal,
   Volume2,
   Settings,
+  Save,
 } from "@lucide/vue"
 import { useLiveStore } from "@/stores/liveStore"
 import HsvColorPicker from "@/components/HsvColorPicker.vue"
@@ -3003,6 +3007,8 @@ onMounted(async () => {
   window.addEventListener("blur", handleFloatMouseUp)
   document.addEventListener("mouseleave", handleFloatMouseUp)
   await initializeNativeRuntime()
+  // 从后端文件存储加载共享状态（登录信息等跨窗口/浏览器同步）
+  await store.loadFromBackend()
   store.restoreObsConnection().catch(() => {})
   await store.restoreSession()
   refreshTimer = window.setInterval(() => {
@@ -3240,6 +3246,15 @@ function refreshCurrent() {
     run(async () => {
       await store.loadTranscodeInfo()
     })
+  }
+}
+
+async function saveConfig() {
+  try {
+    await store.saveConfigToBackend()
+    showToast("配置已保存")
+  } catch {
+    showToast("保存配置失败")
   }
 }
 
