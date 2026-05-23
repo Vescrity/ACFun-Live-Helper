@@ -24,12 +24,12 @@ import (
 	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
-
 	"aclivehelper/backend"
 )
 
 type App struct {
 	ctx           context.Context
+	cancel        context.CancelFunc
 	backendPort   int
 	overlayServer *http.Server
 	overlayURL    string
@@ -55,62 +55,95 @@ type overlaySSEClient struct {
 }
 
 func NewApp(isMini bool) *App {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &App{
-		backendPort: envInt("ACLIVE_BACKEND_PORT", backend.DefaultPort),
-		isMini:      isMini,
+		ctx:           ctx,
+		cancel:        cancel,
+		backendPort:   envInt("ACLIVE_BACKEND_PORT", backend.DefaultPort),
+		isMini:        isMini,
+		stopStatsChan: make(chan struct{}),
 	}
 }
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+// ========== 共享业务逻辑：日志 ==========
 
-	if err := a.setupLogFile(); err != nil {
-		log.Printf("failed to setup log file: %v", err)
-	}
-	log.Printf("==== ACFun Live Helper started; os=%s arch=%s ====", runtime.GOOS, runtime.GOARCH)
-	if err := a.startOverlayServer(); err != nil {
-		log.Printf("failed to start danmaku overlay server: %v", err)
-	}
-	if err := a.startBackend(); err != nil {
-		log.Printf("failed to start embedded acfunlive-backend: %v", err)
+func (a *App) setupLogFile() error {
+	a.logMu.Lock()
+	defer a.logMu.Unlock()
+
+	if a.logFile != nil {
+		return nil
 	}
 
-	a.stopStatsChan = make(chan struct{})
-	go a.trackSystemStats()
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	logDir := filepath.Join(dir, "ACFun Live Helper", "logs")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return err
+	}
+	a.logPath = filepath.Join(logDir, "app.log")
+	f, err := os.OpenFile(a.logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	a.logFile = f
+	log.SetOutput(io.MultiWriter(f, os.Stderr))
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	return nil
+}
 
-	// 仅悬浮 mini 进程注册全局热键（默认 Ctrl+Alt+Shift+G），用于切换鼠标穿透模式。
-	// 穿透模式下窗口不响应点击，必须靠全局热键退出。前端可通过 SetMouseClickThroughHotkey 改键。
-	if a.isMini {
-		startGlobalHotkey(uintptr(modCtrl|modAlt|modShift), uintptr(vkG), func() {
-			wailsRuntime.EventsEmit(a.ctx, "mini:click-through-toggle")
-		})
+func (a *App) closeLogFile() {
+	a.logMu.Lock()
+	defer a.logMu.Unlock()
+	if a.logFile != nil {
+		_ = a.logFile.Close()
+		a.logFile = nil
 	}
 }
 
-func (a *App) shutdown(ctx context.Context) {
-	if a.stopStatsChan != nil {
-		close(a.stopStatsChan)
+// GetLogPath 返回日志文件绝对路径。
+func (a *App) GetLogPath() string {
+	if a.logPath == "" {
+		if err := a.setupLogFile(); err != nil {
+			log.Printf("failed to setup log file: %v", err)
+		}
 	}
-	a.closeMiniWindow()
-	a.stopOverlayServer(ctx)
-	a.closeLogFile()
+	return a.logPath
 }
 
-func (a *App) closeMiniWindow() {
-	a.sysStatsMu.Lock()
-	cmd := a.miniCmd
-	a.miniCmd = nil
-	a.sysStatsMu.Unlock()
-
-	if cmd == nil || cmd.Process == nil {
-		return
+// AppendLog 写一行前端日志到同一个日志文件。
+func (a *App) AppendLog(message string) error {
+	text := strings.TrimSpace(message)
+	if text == "" {
+		return nil
 	}
-	if err := cmd.Process.Kill(); err != nil {
-		log.Printf("[Wails] failed to close mini window process: %v", err)
-		return
+	if a.logPath == "" || a.logFile == nil {
+		if err := a.setupLogFile(); err != nil {
+			return err
+		}
 	}
-	log.Printf("[Wails] Mini window process killed on main shutdown")
+	log.Printf("[frontend] %s", text)
+	return nil
 }
+
+// OpenLogFolder 在文件管理器中打开日志文件夹。
+func (a *App) OpenLogFolder() error {
+	if a.logPath == "" {
+		return errors.New("log file is not available")
+	}
+	folder := filepath.Dir(a.logPath)
+	if runtime.GOOS == "windows" {
+		return exec.Command("explorer", folder).Start()
+	}
+	if runtime.GOOS == "darwin" {
+		return exec.Command("open", folder).Start()
+	}
+	return exec.Command("xdg-open", folder).Start()
+}
+
+// ========== 共享业务逻辑：主题 & 悬浮窗状态 ==========
 
 func (a *App) SetSharedTheme(theme string) error {
 	value := "light"
@@ -164,97 +197,7 @@ func sharedFloatStatePath() string {
 	return filepath.Join(path, "float-state.json")
 }
 
-func (a *App) setupLogFile() error {
-	a.logMu.Lock()
-	defer a.logMu.Unlock()
-
-	if a.logFile != nil {
-		return nil
-	}
-
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return err
-	}
-	logDir := filepath.Join(dir, "ACFun Live Helper", "logs")
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
-		return err
-	}
-	a.logPath = filepath.Join(logDir, "app.log")
-	f, err := os.OpenFile(a.logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	a.logFile = f
-	log.SetOutput(io.MultiWriter(f, os.Stderr))
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	return nil
-}
-
-func (a *App) closeLogFile() {
-	a.logMu.Lock()
-	defer a.logMu.Unlock()
-	if a.logFile != nil {
-		_ = a.logFile.Close()
-		a.logFile = nil
-	}
-}
-
-// GetLogPath returns the absolute path of the backend log file.
-func (a *App) GetLogPath() string {
-	if a.logPath == "" {
-		if err := a.setupLogFile(); err != nil {
-			log.Printf("failed to setup log file: %v", err)
-		}
-	}
-	return a.logPath
-}
-
-// AppendLog writes a frontend/UI log line into the same application log file.
-func (a *App) AppendLog(message string) error {
-	text := strings.TrimSpace(message)
-	if text == "" {
-		return nil
-	}
-	if a.logPath == "" || a.logFile == nil {
-		if err := a.setupLogFile(); err != nil {
-			return err
-		}
-	}
-	log.Printf("[frontend] %s", text)
-	return nil
-}
-
-// OpenLogFolder opens the folder containing the log file in the OS file manager.
-func (a *App) OpenLogFolder() error {
-	if a.logPath == "" {
-		return errors.New("log file is not available")
-	}
-	folder := filepath.Dir(a.logPath)
-	if runtime.GOOS == "windows" {
-		return exec.Command("explorer", folder).Start()
-	}
-	if runtime.GOOS == "darwin" {
-		return exec.Command("open", folder).Start()
-	}
-	return exec.Command("xdg-open", folder).Start()
-}
-
-func (a *App) OpenCoverFile() (string, error) {
-	if a.ctx == nil {
-		return "", errors.New("application is not ready")
-	}
-
-	return wailsRuntime.OpenFileDialog(a.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "选择直播封面",
-		Filters: []wailsRuntime.FileFilter{
-			{
-				DisplayName: "图片文件 (*.jpg;*.jpeg;*.png;*.webp;*.gif)",
-				Pattern:     "*.jpg;*.jpeg;*.png;*.webp;*.gif",
-			},
-		},
-	})
-}
+// ========== 共享业务逻辑：封面图 ==========
 
 func (a *App) ReadCoverFile(filePath string) (string, error) {
 	resolvedPath, err := filepath.Abs(strings.TrimSpace(filePath))
@@ -293,12 +236,9 @@ func (a *App) SaveCoverImage(dataURL string) (string, error) {
 	}
 
 	ext := imageExtension(strings.TrimPrefix(mimeType, "data:"))
-	userConfigDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
 
-	coverDir := filepath.Join(userConfigDir, "ACFun Live Helper", "covers")
+	// 封面文件是临时性的（传给直播 API 用），放到系统临时目录，不污染用户配置空间。
+	coverDir := filepath.Join(os.TempDir(), "aclivehelper-covers")
 	if err := os.MkdirAll(coverDir, 0o755); err != nil {
 		return "", err
 	}
@@ -311,12 +251,7 @@ func (a *App) SaveCoverImage(dataURL string) (string, error) {
 	return filePath, nil
 }
 
-func (a *App) CopyText(text string) error {
-	if a.ctx == nil {
-		return errors.New("application is not ready")
-	}
-	return wailsRuntime.ClipboardSetText(a.ctx, text)
-}
+// ========== 共享业务逻辑：后端管理 ==========
 
 func (a *App) OpenExternalURL(rawURL string) error {
 	if a.ctx == nil {
@@ -455,113 +390,6 @@ func (a *App) DownloadPlaybackToFile(rawURL string, suggestedName string) (strin
 	return savePath, nil
 }
 
-// newPlaybackHTTPClient 创建一个不带全局超时（录播文件可能几 GB）但限制响应头超时的 HTTP 客户端。
-func newPlaybackHTTPClient() *http.Client {
-	return &http.Client{
-		Timeout: 0,
-		Transport: &http.Transport{
-			ResponseHeaderTimeout: 60 * time.Second,
-		},
-	}
-}
-
-// playbackGet 发起一次带 UA 的 GET 请求，把非 2xx 视为错误并提前关闭 body。
-func playbackGet(ctx context.Context, client *http.Client, rawURL string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("构造请求失败: %w", err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (ACFunLiveHelper)")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("请求失败: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		resp.Body.Close()
-		return nil, fmt.Errorf("远程返回 HTTP %d", resp.StatusCode)
-	}
-	return resp, nil
-}
-
-// parseM3U8Segments 解析 media playlist，返回每个分片的绝对 URL；忽略以 # 开头的标签行。
-// 简化版：不处理 master playlist（含多分辨率列表）。AcFun 录播一般直接是 media playlist。
-func parseM3U8Segments(body []byte, base *url.URL) ([]string, error) {
-	var segments []string
-	scanner := bufio.NewScanner(bytes.NewReader(body))
-	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		u, err := url.Parse(line)
-		if err != nil {
-			return nil, err
-		}
-		abs := base.ResolveReference(u).String()
-		segments = append(segments, abs)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return segments, nil
-}
-
-// looksLikeM3U8URL 简单判断 URL 是否以 .m3u8 结尾（忽略 query string）。
-func looksLikeM3U8URL(rawURL string) bool {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return false
-	}
-	return strings.HasSuffix(strings.ToLower(parsed.Path), ".m3u8")
-}
-
-// swapPlaybackExt 把预填名的扩展名换为 newExt（含点）。
-func swapPlaybackExt(name, newExt string) string {
-	ext := filepath.Ext(name)
-	if ext == "" {
-		return name + newExt
-	}
-	return strings.TrimSuffix(name, ext) + newExt
-}
-
-// sanitizePlaybackFileName 把 Windows 文件名禁止字符替换为下划线，
-// 同时截断到 120 字符防止某些文件系统/对话框报错。
-func sanitizePlaybackFileName(name string) string {
-	const forbidden = "<>:\"/\\|?*"
-	mapped := strings.Map(func(r rune) rune {
-		if r < 0x20 {
-			return '_'
-		}
-		if strings.ContainsRune(forbidden, r) {
-			return '_'
-		}
-		return r
-	}, name)
-	mapped = strings.TrimSpace(mapped)
-	if mapped == "" {
-		mapped = "playback.mp4"
-	}
-	if len([]rune(mapped)) > 120 {
-		runes := []rune(mapped)
-		mapped = string(runes[:120])
-	}
-	return mapped
-}
-
-func (a *App) GetSystemFonts() []string {
-	return getPlatformFonts()
-}
-
-func (a *App) GetOverlayBaseUrl() (string, error) {
-	if a.overlayURL == "" {
-		if err := a.startOverlayServer(); err != nil {
-			return "", err
-		}
-	}
-	return a.overlayURL + "/danmaku-overlay.html", nil
-}
-
 // GetBackendPort returns the loopback port that the embedded acfunlive-backend
 // WebSocket server listens on. Useful for the frontend store on first launch.
 func (a *App) GetBackendPort() int {
@@ -593,9 +421,18 @@ func (a *App) startBackend() error {
 	return nil
 }
 
-// 优先绑定固定端口，让 OBS 浏览器源 URL 在多次启动间保持稳定。
-// 被占用（如另一个实例正在运行）时回退到操作系统分配的随机端口。
+// ========== 共享业务逻辑：Overlay 弹幕服务器（SSE） ==========
+
 const overlayPreferredPort = 15370
+
+func (a *App) GetOverlayBaseUrl() (string, error) {
+	if a.overlayURL == "" {
+		if err := a.startOverlayServer(); err != nil {
+			return "", err
+		}
+	}
+	return a.overlayURL + "/danmaku-overlay.html", nil
+}
 
 func (a *App) startOverlayServer() error {
 	if a.overlayServer != nil && a.overlayURL != "" {
@@ -650,8 +487,6 @@ func (a *App) stopOverlayServer(parent context.Context) {
 	a.overlayURL = ""
 }
 
-// serveOverlayEvents 升级请求为 Server-Sent Events 流，把最新样式实时推给 overlay 客户端。
-// 客户端连入时会立即收到一份当前缓存样式（若有），之后每次主程序调用 BroadcastOverlayStyle 都会推一次。
 func (a *App) serveOverlayEvents(response http.ResponseWriter, request *http.Request) {
 	flusher, ok := response.(http.Flusher)
 	if !ok {
@@ -702,7 +537,6 @@ func (a *App) serveOverlayEvents(response http.ResponseWriter, request *http.Req
 			writeSSE(response, "style", msg)
 			flusher.Flush()
 		case <-keepalive.C:
-			// 注释行 keep-alive，让代理 / OBS 不会因为静默而判定连接失活
 			_, _ = io.WriteString(response, ": keepalive\n\n")
 			flusher.Flush()
 		}
@@ -744,7 +578,6 @@ func (a *App) BroadcastOverlayStyle(payload string) error {
 		select {
 		case c.ch <- payload:
 		default:
-			// 缓冲已满（客户端落后），跳过本次更新；下一次 broadcast 仍会送达最新值
 		}
 	}
 	return nil
@@ -758,6 +591,12 @@ func (a *App) serveOverlayAsset(response http.ResponseWriter, request *http.Requ
 
 	response.Header().Set("Cache-Control", "no-store")
 
+	// Try embedded assets first (WebUI mode — compiled into the binary)
+	if serveEmbeddedAsset(response, request, assetPath) {
+		return
+	}
+
+	// Fallback: disk directories (development or Wails mode)
 	if served := serveDiskAsset(response, request, filepath.Join("public", assetPath)); served {
 		return
 	}
@@ -765,14 +604,7 @@ func (a *App) serveOverlayAsset(response http.ResponseWriter, request *http.Requ
 		return
 	}
 
-	content, err := assets.ReadFile(path.Join("dist", assetPath))
-	if err != nil {
-		http.NotFound(response, request)
-		return
-	}
-
-	response.Header().Set("Content-Type", contentType(assetPath))
-	_, _ = response.Write(content)
+	http.NotFound(response, request)
 }
 
 func serveDiskAsset(response http.ResponseWriter, request *http.Request, filePath string) bool {
@@ -787,6 +619,149 @@ func serveDiskAsset(response http.ResponseWriter, request *http.Request, filePat
 	http.ServeFile(response, request, resolvedPath)
 	return true
 }
+
+// ========== 共享业务逻辑：系统信息 ==========
+
+type SystemStatsResult struct {
+	CPU    float64 `json:"cpu"`
+	Memory float64 `json:"memory"`
+}
+
+func (a *App) GetSystemStats() SystemStatsResult {
+	a.sysStatsMu.Lock()
+	defer a.sysStatsMu.Unlock()
+	return SystemStatsResult{
+		CPU:    a.cpuPercent,
+		Memory: a.memPercent,
+	}
+}
+
+func (a *App) GetNetworkDelay() int {
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", "live.acfun.cn:443", 1500*time.Millisecond)
+	if err != nil {
+		conn, err = net.DialTimeout("tcp", "www.acfun.cn:80", 1500*time.Millisecond)
+		if err != nil {
+			return -1
+		}
+	}
+	defer conn.Close()
+	return int(time.Since(start).Milliseconds())
+}
+
+func (a *App) trackSystemStats() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	state := newSysStatsState()
+
+	for {
+		select {
+		case <-a.stopStatsChan:
+			return
+		case <-ticker.C:
+			cpu, mem := state.collect()
+			a.sysStatsMu.Lock()
+			a.cpuPercent = cpu
+			a.memPercent = mem
+			a.sysStatsMu.Unlock()
+		}
+	}
+}
+
+func (a *App) GetSystemFonts() []string {
+	return getPlatformFonts()
+}
+
+// ========== 共享业务逻辑：录播下载辅助 ==========
+
+func newPlaybackHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 0,
+		Transport: &http.Transport{
+			ResponseHeaderTimeout: 60 * time.Second,
+		},
+	}
+}
+
+func playbackGet(ctx context.Context, client *http.Client, rawURL string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("构造请求失败: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (ACFunLiveHelper)")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求失败: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("远程返回 HTTP %d", resp.StatusCode)
+	}
+	return resp, nil
+}
+
+func parseM3U8Segments(body []byte, base *url.URL) ([]string, error) {
+	var segments []string
+	scanner := bufio.NewScanner(bytes.NewReader(body))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		u, err := url.Parse(line)
+		if err != nil {
+			return nil, err
+		}
+		abs := base.ResolveReference(u).String()
+		segments = append(segments, abs)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return segments, nil
+}
+
+func looksLikeM3U8URL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(parsed.Path), ".m3u8")
+}
+
+func swapPlaybackExt(name, newExt string) string {
+	ext := filepath.Ext(name)
+	if ext == "" {
+		return name + newExt
+	}
+	return strings.TrimSuffix(name, ext) + newExt
+}
+
+func sanitizePlaybackFileName(name string) string {
+	const forbidden = "<>:\"/\\|?*"
+	mapped := strings.Map(func(r rune) rune {
+		if r < 0x20 {
+			return '_'
+		}
+		if strings.ContainsRune(forbidden, r) {
+			return '_'
+		}
+		return r
+	}, name)
+	mapped = strings.TrimSpace(mapped)
+	if mapped == "" {
+		mapped = "playback.mp4"
+	}
+	if len([]rune(mapped)) > 120 {
+		runes := []rune(mapped)
+		mapped = string(runes[:120])
+	}
+	return mapped
+}
+
+// ========== 工具函数 ==========
 
 func isPortOpen(port int) bool {
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 500*time.Millisecond)
@@ -831,54 +806,6 @@ func envInt(name string, fallback int) int {
 func envBool(name string) bool {
 	value := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
 	return value == "1" || value == "true" || value == "yes"
-}
-
-type SystemStatsResult struct {
-	CPU    float64 `json:"cpu"`
-	Memory float64 `json:"memory"`
-}
-
-func (a *App) GetSystemStats() SystemStatsResult {
-	a.sysStatsMu.Lock()
-	defer a.sysStatsMu.Unlock()
-	return SystemStatsResult{
-		CPU:    a.cpuPercent,
-		Memory: a.memPercent,
-	}
-}
-
-func (a *App) GetNetworkDelay() int {
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", "live.acfun.cn:443", 1500*time.Millisecond)
-	if err != nil {
-		conn, err = net.DialTimeout("tcp", "www.acfun.cn:80", 1500*time.Millisecond)
-		if err != nil {
-			return -1
-		}
-	}
-	defer conn.Close()
-	return int(time.Since(start).Milliseconds())
-}
-
-func (a *App) trackSystemStats() {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	state := newSysStatsState()
-
-	for {
-		select {
-		case <-a.stopStatsChan:
-			return
-		case <-ticker.C:
-			cpu, mem := state.collect()
-
-			a.sysStatsMu.Lock()
-			a.cpuPercent = cpu
-			a.memPercent = mem
-			a.sysStatsMu.Unlock()
-		}
-	}
 }
 
 // SetAlwaysOnTop 设置窗口置顶
