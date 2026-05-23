@@ -4,14 +4,15 @@
 package main
 
 import (
-	syswin "golang.org/x/sys/windows"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	syswin "golang.org/x/sys/windows"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 // watchParentProcess monitors the parent process (ACLIVE_PARENT_PID) to ensure the mini window
