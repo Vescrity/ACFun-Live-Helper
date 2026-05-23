@@ -529,8 +529,17 @@ export const useLiveStore = defineStore("live", {
       this.persist()
     },
     toggleTTS() {
-      this.tts.enabled = !this.tts.enabled
-      if (this.tts.enabled) useTTS().init()
+      if (this.tts.enabled) {
+        const tts = useTTS()
+        tts.init()
+        // Chrome 要求首次 speak 必须在用户手势里触发，否则后续静默。
+        // 发一个零宽空格解锁，说完后 clearing 状态。
+        const synth = window.speechSynthesis
+        const u = new SpeechSynthesisUtterance("\u200B")
+        u.volume = 0
+        u.rate = 2
+        try { synth.speak(u) } catch (_) { /* ignore */ }
+      }
       this.persist()
     },
     setTTSRate(value) {
