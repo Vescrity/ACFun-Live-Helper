@@ -15,5 +15,22 @@
     "productName": "AcFun Live Helper",
     "productVersion": "1.0.0-rc.3",
     "comments": "AcFun live streaming helper powered by acfunlive-backend"
+  },
+  "platforms": {
+    "windows": {
+      "platform": "windows",
+      "arch": "amd64",
+      "outputFilename": "ACFun Live Helper"
+    },
+    "linux": {
+      "platform": "linux",
+      "arch": "amd64",
+      "outputFilename": "acfun-live-helper"
+    },
+    "darwin": {
+      "platform": "darwin",
+      "arch": "universal",
+      "outputFilename": "ACFun Live Helper"
+    }
   }
 }
