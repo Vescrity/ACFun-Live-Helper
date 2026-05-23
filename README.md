@@ -6,9 +6,20 @@
 [![Vue](https://img.shields.io/badge/Vue-3-42b883)](https://vuejs.org/)
 [![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8)](https://go.dev/)
 
-面向 AcFun 直播主播的现代化桌面端助手。基于 **Wails v2 + Go + Vue 3 + Pinia** 构建，内嵌 `acfunlive-backend`，无需额外启动后端进程。
+面向 AcFun 直播主播的现代化桌面端助手。基于 **Go + Vue 3 + Pinia** 构建，内嵌 `acfunlive-backend`，无需额外启动后端进程。
+
+支持**双构建模式**：
+
+| 模式 | 命令 | 依赖 | 体积 |
+|------|------|------|------|
+| **WebUI**（默认） | `go build` | 无（纯 Go 静态链接） | ~19MB |
+| **Wails 桌面版** | `go build -tags 'wails webkit2_41'` | 需 webkit2gtk-4.1 + GTK3 | ~20MB |
+
+WebUI 模式下以本地 HTTP 服务运行，自动打开系统浏览器，**无需 WebView2 / WebKit**，可在任何有浏览器的平台上运行。
 
 > **当前版本**：`v1.0.0-rc.3` — [前往 Releases 下载](https://github.com/epstomai/ACFun-Live-Helper/releases/latest)
+
+---
 
 ## 目录
 
@@ -17,6 +28,7 @@
 - [环境要求](#环境要求)
 - [开发](#开发)
 - [构建](#构建)
+- [双模式对比](#双模式对比)
 - [项目结构](#项目结构)
 - [下载](#下载)
 - [已知问题 / FAQ](#已知问题--faq)
@@ -52,13 +64,13 @@
 - 录播在线回放（系统浏览器打开签名链接）；历史记录可单条删除
 - 自动关播识别：`DANMU_STOP / loadRoom / loadLiveStatus` 任一发现关播都触发收尾，写入历史并刷新本场总结，避免漏记
 
-### 悬浮 & 主题
+### 悬浮 & 主题（仅 Wails 桌面版）
 - 暗 / 亮主题切换，自适应配色
 - 侧栏可折叠为图标，支持手动展开
 - **悬浮置顶弹幕窗**（始终在最前），支持以下鼠标穿透与设置特性：
-  - **👻 鼠标穿透**：左键点击 👻 按钮进入穿透状态（右上角显示“👻 穿透中”提示，鼠标事件落到下层游戏/窗口）。
-  - **🎚️ 三态设置循环**：Header 置顶设置按钮可循环切换底部状态（1. 打开透明度滑杆设置 ➔ 2. 切换至穿透热键改键 ➔ 3. 关闭设置）。
-  - **⌨️ 全局热键改键**：可自定义鼠标穿透退出热键（默认 `Ctrl+Alt+Shift+G`）。支持自定义修饰键与 A-Z/0-9/F1-F12，按 Esc 取消，支持状态与热键持久化。
+  - **👻 鼠标穿透**：左键点击 👻 按钮进入穿透状态，鼠标事件落到下层窗口
+  - **🎚️ 三态设置循环**：Header 置顶设置按钮可循环切换底部状态
+  - **⌨️ 全局热键改键**：可自定义鼠标穿透退出热键（默认 `Ctrl+Alt+Shift+G`）
 
 ### 系统
 - CPU / 内存 / 网络延迟实时监控
@@ -67,71 +79,145 @@
 
 ## 技术栈
 
-- **Wails v2** — Go ↔ Webview2 桥接
 - **Go 1.21+** — 主进程、HTTP / SSE / 系统监控 / 文件下载
 - **Vue 3 + Pinia** — 前端 UI 与状态管理
 - **Vite 8** — 前端构建
 - **Lucide Vue** — 图标
+- **Wails v2**（可选）— Go ↔ Webview2 桥接（仅 Wails 桌面版）
 - **acfunlive-backend / acfundanmu** — A 站弹幕协议与开播 API
 
 ## 环境要求
 
-**运行环境**
+### WebUI 模式（推荐 Linux）
 
+| 需求 | 说明 |
+|------|------|
+| Go 1.21+ |  |
+| Node.js 18+ | 构建前端用 |
+| 浏览器 | Chrome / Firefox / Edge 等现代浏览器 |
+
+无需安装 WebView2、WebKit、GTK。
+
+### Wails 桌面版
+
+**Windows**
 - Windows 10 / 11
 - [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（Win11 已内置）
 
-**开发工具链**
+**Linux**
+- webkit2gtk-4.1
+- GTK+ 3.0
+- 安装参考（Arch Linux）：
+  ```bash
+  sudo pacman -S webkit2gtk-4.1 gtk3
+  ```
+
+### 开发工具链（通用）
 
 - Go 1.21 或更高
 - Node.js 18 或更高
-- Wails v2 CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
-- 推荐 PowerShell
+- Wails v2 CLI（仅 Wails 模式需要）：`go install github.com/wailsapp/wails/v2/cmd/wails@latest`
 
 ## 开发
 
 安装依赖：
 
-```powershell
+```bash
 npm install
 go mod tidy
 ```
 
-启动开发模式（前端热重载 + Wails 自动重启 Go 后端）：
+### WebUI 开发模式
 
-```powershell
-npm run wails:dev
-# 或
-wails dev
+浏览器打开 `http://localhost:5173`，Go 后端在 `http://localhost:15369`：
+
+```bash
+# 终端 1：前端热重载
+npm run dev
+
+# 终端 2：Go 后端
+npm run dev:webui
 ```
 
-后端客户端单元测试：
+### Wails 开发模式（Linux）
 
-```powershell
+前端热重载 + Wails 自动重启 Go 后端：
+
+```bash
+npm run wails:dev
+```
+
+### 测试
+
+```bash
 npm run test:backend-client
 ```
 
 ## 构建
 
-构建当前平台：
+### WebUI 版（推荐 Linux，无 CGO 依赖）
 
-```powershell
+```bash
+# 构建前端
+npm run build
+
+# 编译纯 Go 二进制（静态链接）
+npm run build:webui
+
+# 或直接
+CGO_ENABLED=0 go build -o build/bin/aclivehelper-webui .
+```
+
+运行：
+
+```bash
+./build/bin/aclivehelper-webui
+```
+
+自动打开浏览器访问 `http://127.0.0.1:15369`。
+
+### Wails 桌面版（Windows / Linux）
+
+```bash
 npm run wails:build
+```
+
+指定 Linux/webkit2gtk-4.1：
+
+```bash
+npm run wails:build
+# 背后执行：wails build -tags 'wails webkit2_41'
 ```
 
 构建 Windows amd64：
 
-```powershell
+```bash
 npm run wails:build:win
 ```
 
-或使用 Windows 一键构建脚本（含环境校验 + 依赖安装 + `wails build`）：
+Windows 一键构建脚本（含环境校验 + 依赖安装）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-windows.ps1
 ```
 
-构建产物默认位于 `build\bin\ACFun Live Helper.exe`（约 16 MB）。
+Wails 构建产物默认位于 `build/bin/ACFun Live Helper.exe`。
+
+## 双模式对比
+
+| 特性 | WebUI 模式 | Wails 桌面版 |
+|------|-----------|-------------|
+| CGO | ❌ 无 | ✅ 有 |
+| 系统依赖 | 仅浏览器 | webkit2gtk / WebView2 |
+| 二进制体积 | ~19MB | ~20MB |
+| 链接方式 | 静态链接 | 动态链接 |
+| 悬浮置顶弹幕窗 | ❌ 新浏览器标签页 | ✅ 原生窗口 |
+| 鼠标穿透 / 全局热键 | ❌ | ✅（仅 Windows） |
+| 窗口置顶 | 浏览器手动管理 | ✅ 原生支持 |
+| 系统文件对话框 | 浏览器 `<input type=file>` / `<a download>` | ✅ 原生对话框 |
+| 剪贴板 | `navigator.clipboard` | ✅ wails runtime |
+
+> WebUI 模式适合 Linux 用户（避免 webkit2gtk 依赖）和需要轻量运行的用户。Wails 模式保留完整的桌面体验。
 
 ## 项目结构
 
@@ -140,13 +226,20 @@ powershell -ExecutionPolicy Bypass -File .\build-windows.ps1
 ├── backend/              # Go 后端命令与业务封装
 ├── public/               # 静态资源
 ├── src/                  # Vue 前端源码
-│   ├── services/         # 前端服务封装
+│   ├── services/         # 前端服务封装（nativeBridge.js 适配双模式）
 │   ├── stores/           # Pinia 状态管理
 │   └── utils/            # 通用工具
 ├── third_party/          # 第三方 Go 依赖源码
-├── wailsjs/              # Wails 生成的前后端桥接代码
-├── app.go                # Wails 应用入口
-├── main.go               # Go 主入口
+├── wailsjs/              # Wails 生成的前后端桥接代码（仅 Wails 模式）
+├── app.go                # 共享业务逻辑
+├── bridge_wails.go       # Wails 特有实现                    [build tag: wails]
+├── bridge_webui.go       # WebUI HTTP API 实现               [build tag: !wails]
+├── main.go               # Wails 入口                        [build tag: wails]
+├── main_webui.go         # WebUI 入口                        [build tag: !wails]
+├── platform_*.go         # 平台窗口配置                       [build tag: *_&&wails]
+├── main_*_*.go           # 跨平台 watchParentProcess          [build tag: *_&&wails]
+├── mouse_clickthrough_*.go # 鼠标穿透/全局热键                  [build tag: *_&&wails]
+├── sysstats_*.go         # 系统统计/字体获取（共享）
 ├── package.json          # 前端脚本与依赖
 └── wails.json            # Wails 项目配置
 ```
@@ -158,18 +251,21 @@ powershell -ExecutionPolicy Bypass -File .\build-windows.ps1
 - 最新版本：<https://github.com/epstomai/ACFun-Live-Helper/releases/latest>
 - 全部版本：<https://github.com/epstomai/ACFun-Live-Helper/releases>
 
-下载 `ACFun Live Helper.exe` 双击即可运行。首次启动会在 `%AppData%\aclivehelper` 创建账号配置目录。
+Windows 用户下载 `ACFun Live Helper.exe` 双击即可运行。Linux 用户建议自行编译 WebUI 版本。
+
+首次启动会在 `%AppData%\aclivehelper` 创建账号配置目录。
 
 ## 已知问题 / FAQ
 
 - **登录失败 / 滑块验证**：A 站风控会偶发要求滑块验证，本助手暂未集成滑块求解，请到网页版手动通过一次后再尝试。
 - **录播下载文件后缀是 `.ts`**：A 站录播以 HLS 切片下发，拼接结果就是 MPEG-TS 流。VLC 可直接播放；如需 mp4：
 
-  ```powershell
+  ```bash
   ffmpeg -i "xxx.ts" -c copy "xxx.mp4"
   ```
 
-- **OBS 浏览器源不刷新**：本版本已改用 SSE 实时推送，如果仍未生效，请确认 URL 端口是 `:15370` 且 OBS 浏览器源未启用 ``Shutdown source when not visible``。
+- **OBS 浏览器源不刷新**：本版本已改用 SSE 实时推送，如果仍未生效，请确认 URL 端口是 `:15370` 且 OBS 浏览器源未启用 `Shutdown source when not visible`。
+- **Linux 上无法启动 Wails 版**：确认已安装 webkit2gtk-4.1（系统没有 4.0 版本），使用 `npm run wails:build` 自动携带 `webkit2_41` tag。推荐直接使用 WebUI 模式，无需任何系统库。
 - **本场总结里时长 00:00:00**：通常是关播时 `GET_SUMMARY` 返回失败，助手会用本场计时器估算 duration 兜底，下次进入数据页会再尝试拉取真实总结。
 
 ## 开源协议

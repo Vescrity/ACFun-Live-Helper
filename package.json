@@ -9,9 +9,11 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "wails:dev": "wails dev -tags webkit2_41",
-    "wails:build": "wails build -tags webkit2_41",
-    "wails:build:win": "wails build -platform windows/amd64",
+    "wails:dev": "wails dev -tags 'wails webkit2_41'",
+    "wails:build": "wails build -tags 'wails webkit2_41'",
+    "wails:build:win": "wails build -platform windows/amd64 -tags wails",
+    "build:webui": "go build -o build/bin/aclivehelper-webui .",
+    "dev:webui": "go run .",
     "test:backend-client": "node test/acfunBackend.test.mjs"
   },
   "dependencies": {

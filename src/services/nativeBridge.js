@@ -1,3 +1,26 @@
+// WebUI API 辅助：WebUI 模式下通过 HTTP 调后端
+const API_BASE = '/api'
+
+async function apiGet(path) {
+  try {
+    const res = await fetch(API_BASE + path)
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+}
+
+async function apiPost(path, body) {
+  try {
+    await fetch(API_BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: String(body ?? ''),
+    })
+  } catch { /* ignore */ }
+}
+
 function wailsApp() {
   return window.go && window.go.main && window.go.main.App
     ? window.go.main.App
@@ -6,166 +29,160 @@ function wailsApp() {
 
 export async function openCoverFile() {
   const app = wailsApp()
-  return app && app.OpenCoverFile ? app.OpenCoverFile() : ""
+  if (app && app.OpenCoverFile) return app.OpenCoverFile()
+  // WebUI: 用浏览器原生文件选择
+  return triggerFileInput('image/jpeg,image/png,image/webp,image/gif')
 }
 
 export async function readCoverFile(filePath) {
   const app = wailsApp()
-  return app && app.ReadCoverFile ? app.ReadCoverFile(filePath) : ""
+  if (app && app.ReadCoverFile) return app.ReadCoverFile(filePath)
+  const data = await apiGet(`/cover/read?path=${encodeURIComponent(filePath)}`)
+  return data?.dataUrl ?? ""
 }
 
 export async function saveCoverImage(dataUrl) {
   const app = wailsApp()
-  return app && app.SaveCoverImage ? app.SaveCoverImage(dataUrl) : dataUrl
+  if (app && app.SaveCoverImage) return app.SaveCoverImage(dataUrl)
+  const data = await apiPost('/cover/save', dataUrl)
+  return dataUrl
 }
 
 export async function copyText(text) {
   const app = wailsApp()
-  if (app && app.CopyText) {
-    return app.CopyText(text)
-  }
-
-  if (navigator.clipboard) {
-    return navigator.clipboard.writeText(text)
-  }
-  return undefined
+  if (app && app.CopyText) return app.CopyText(text)
+  if (navigator.clipboard) return navigator.clipboard.writeText(text)
 }
 
 export async function openExternalURL(url) {
   const app = wailsApp()
-  if (app && app.OpenExternalURL) {
-    return app.OpenExternalURL(url)
-  }
+  if (app && app.OpenExternalURL) return app.OpenExternalURL(url)
   window.open(url, "_blank", "noopener,noreferrer")
-  return undefined
 }
 
 export async function getSystemFonts() {
   const app = wailsApp()
-  if (app && app.GetSystemFonts) {
-    return app.GetSystemFonts()
-  }
-  return []
+  if (app && app.GetSystemFonts) return app.GetSystemFonts()
+  const data = await apiGet('/fonts')
+  return Array.isArray(data) ? data : []
 }
 
 export async function getOverlayBaseUrl() {
   const app = wailsApp()
-  return app && app.GetOverlayBaseUrl ? app.GetOverlayBaseUrl() : ""
+  if (app && app.GetOverlayBaseUrl) return app.GetOverlayBaseUrl()
+  const data = await apiGet('/overlay-url')
+  return data?.error ?? (typeof data === 'string' ? data : "")
 }
 
 export async function getBackendPort() {
   const app = wailsApp()
-  return app && app.GetBackendPort ? app.GetBackendPort() : 0
+  if (app && app.GetBackendPort) return app.GetBackendPort()
+  const data = await apiGet('/backend-port')
+  return data?.port ?? 0
 }
 
 export async function getLogPath() {
   const app = wailsApp()
-  return app && app.GetLogPath ? app.GetLogPath() : ""
+  if (app && app.GetLogPath) return app.GetLogPath()
+  const data = await apiGet('/log-path')
+  return data?.path ?? ""
 }
 
 export async function appendLog(message) {
   const app = wailsApp()
-  if (app && app.AppendLog) {
-    return app.AppendLog(String(message || ""))
-  }
-  return undefined
+  if (app && app.AppendLog) return app.AppendLog(String(message || ""))
+  apiPost('/log', String(message || ""))
 }
 
 export async function openLogFolder() {
   const app = wailsApp()
-  if (app && app.OpenLogFolder) {
-    return app.OpenLogFolder()
-  }
-  return undefined
+  if (app && app.OpenLogFolder) return app.OpenLogFolder()
+  apiPost('/log-folder')
 }
 
 export async function getSystemStats() {
   const app = wailsApp()
-  return app && app.GetSystemStats ? app.GetSystemStats() : { cpu: 0, memory: 0 }
+  if (app && app.GetSystemStats) return app.GetSystemStats()
+  const data = await apiGet('/stats')
+  return data ? { cpu: data.cpu ?? 0, memory: data.memory ?? 0 } : { cpu: 0, memory: 0 }
 }
 
 export async function getNetworkDelay() {
   const app = wailsApp()
-  return app && app.GetNetworkDelay ? app.GetNetworkDelay() : -1
+  if (app && app.GetNetworkDelay) return app.GetNetworkDelay()
+  const data = await apiGet('/delay')
+  return data?.delay ?? -1
 }
 
 export async function setAlwaysOnTop(enabled) {
   const app = wailsApp()
-  if (app && app.SetAlwaysOnTop) {
-    return app.SetAlwaysOnTop(enabled)
-  }
+  if (app && app.SetAlwaysOnTop) return app.SetAlwaysOnTop(enabled)
+  // WebUI: 浏览器无法强制置顶，忽略
 }
 
 export async function setWindowSize(width, height) {
   const app = wailsApp()
-  if (app && app.SetWindowSize) {
-    return app.SetWindowSize(width, height)
-  }
+  if (app && app.SetWindowSize) return app.SetWindowSize(width, height)
+  // WebUI: 由浏览器管理窗口大小
 }
 
 export async function isMiniMode() {
   const app = wailsApp()
-  return app && app.IsMiniMode ? app.IsMiniMode() : false
+  if (app && app.IsMiniMode) return app.IsMiniMode()
+  return false
 }
 
-// 切换 mini 窗口的鼠标穿透模式（仅 mini 进程有效）。
-// 启用后窗口对鼠标完全透明，鼠标事件直接落到下层（如全屏游戏），
-// 退出穿透必须靠全局热键（默认 Ctrl+Alt+Shift+G，可在 mini footer 改键）。
 export async function setMouseClickThrough(enable) {
   const app = wailsApp()
-  if (app && app.SetMouseClickThrough) {
-    return app.SetMouseClickThrough(Boolean(enable))
-  }
+  if (app && app.SetMouseClickThrough) return app.SetMouseClickThrough(Boolean(enable))
+  // WebUI: 不支持鼠标穿透
 }
 
-// 重新注册全局热键。
-// mods: 修饰键位掩码 — 1=Alt, 2=Ctrl, 4=Shift, 8=Win（多个用 OR 组合）
-// vk: Windows Virtual Key Code（字母 A-Z = 0x41-0x5A, 数字 0-9 = 0x30-0x39, F1-F12 = 0x70-0x7B）
 export async function setMouseClickThroughHotkey(mods, vk) {
   const app = wailsApp()
   if (app && app.SetMouseClickThroughHotkey) {
     return app.SetMouseClickThroughHotkey(Number(mods) || 0, Number(vk) || 0)
   }
+  // WebUI: 不支持全局热键
 }
 
-// 监听后端发出的「全局热键切换穿透」事件，返回 unsubscribe 函数。
 export function onClickThroughToggle(handler) {
   const runtime = window.runtime
-  if (!runtime || !runtime.EventsOn) {
-    return () => {}
+  if (runtime && runtime.EventsOn) {
+    runtime.EventsOn("mini:click-through-toggle", () => {
+      try { handler() } catch {}
+    })
+    return () => {
+      if (runtime.EventsOff) runtime.EventsOff("mini:click-through-toggle")
+    }
   }
-  runtime.EventsOn("mini:click-through-toggle", () => {
-    try { handler() } catch {}
-  })
-  return () => {
-    if (runtime.EventsOff) runtime.EventsOff("mini:click-through-toggle")
-  }
+  return () => {}
 }
 
 export async function launchMiniWindow() {
   const app = wailsApp()
-  if (app && app.LaunchMiniWindow) {
-    return app.LaunchMiniWindow()
-  }
+  if (app && app.LaunchMiniWindow) return app.LaunchMiniWindow()
+  // WebUI: 后端打开新浏览器窗口
+  apiPost('/launch-mini')
 }
 
 export async function setSharedTheme(theme) {
   const app = wailsApp()
-  if (app && app.SetSharedTheme) {
-    return app.SetSharedTheme(theme)
-  }
+  if (app && app.SetSharedTheme) return app.SetSharedTheme(theme)
+  apiPost('/theme', theme)
 }
 
 export async function getSharedTheme() {
   const app = wailsApp()
-  return app && app.GetSharedTheme ? app.GetSharedTheme() : ""
+  if (app && app.GetSharedTheme) return app.GetSharedTheme()
+  const data = await apiGet('/theme')
+  return data?.theme ?? ""
 }
 
 export async function setSharedFloatState(payload) {
   const app = wailsApp()
-  if (app && app.SetSharedFloatState) {
-    return app.SetSharedFloatState(payload)
-  }
+  if (app && app.SetSharedFloatState) return app.SetSharedFloatState(payload)
+  apiPost('/float-state', payload)
 }
 
 export async function getSharedFloatState() {
@@ -175,24 +192,30 @@ export async function getSharedFloatState() {
 
 export async function broadcastOverlayStyle(payload) {
   const app = wailsApp()
-  if (app && app.BroadcastOverlayStyle) {
-    return app.BroadcastOverlayStyle(String(payload || ""))
-  }
-  return undefined
+  if (app && app.BroadcastOverlayStyle) return app.BroadcastOverlayStyle(String(payload || ""))
+  apiPost('/overlay-style', String(payload || ""))
 }
 
-// 让用户选择保存路径，并把远程录播文件流式下载到本地。
-// 返回最终保存路径；用户取消保存对话框时返回空串。
-// 浏览器环境（无 wails）下回退到 window.open，由系统浏览器接管下载。
 export async function downloadPlaybackToFile(url, suggestedName) {
   const app = wailsApp()
-  if (app && app.DownloadPlaybackToFile) {
-    return app.DownloadPlaybackToFile(String(url || ""), String(suggestedName || ""))
-  }
-  if (url) {
-    window.open(url, "_blank", "noopener,noreferrer")
-  }
+  if (app && app.DownloadPlaybackToFile) return app.DownloadPlaybackToFile(String(url || ""), String(suggestedName || ""))
+  if (url) window.open(url, "_blank", "noopener,noreferrer")
   return ""
 }
 
-
+// 浏览器环境下触发 `<input type=file>` 选择文件
+function triggerFileInput(accept) {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = accept
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (!file) { resolve(""); return }
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.readAsDataURL(file)
+    }
+    input.click()
+  })
+}
