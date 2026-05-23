@@ -233,12 +233,9 @@ func (a *App) SaveCoverImage(dataURL string) (string, error) {
 	}
 
 	ext := imageExtension(strings.TrimPrefix(mimeType, "data:"))
-	userConfigDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
 
-	coverDir := filepath.Join(userConfigDir, "ACFun Live Helper", "covers")
+	// 封面文件是临时性的（传给直播 API 用），放到系统临时目录，不污染用户配置空间。
+	coverDir := filepath.Join(os.TempDir(), "aclivehelper-covers")
 	if err := os.MkdirAll(coverDir, 0o755); err != nil {
 		return "", err
 	}

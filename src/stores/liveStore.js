@@ -1385,6 +1385,18 @@ export const useLiveStore = defineStore("live", {
     async resolveUploadCover() {
       const file = this.live.coverFile
       if (!file) return ""
+
+      // 如果 coverFile 仍是 data URL（例如旧版 localStorage 残留），
+      // 先保存到后端换取文件路径，避免 startLive 传 data URL 过去导致出错。
+      if (/^data:/i.test(file)) {
+        const savedPath = await saveCoverImage(file)
+        if (savedPath) {
+          this.live.coverFile = savedPath
+          this.persist()
+          return savedPath
+        }
+      }
+
       const crop = this.live.coverCrops && this.live.coverCrops[file]
       if (!crop) return file
       if (/\.gif(?:$|[?#])/i.test(file)) return file

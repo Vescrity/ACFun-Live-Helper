@@ -2843,7 +2843,14 @@ function doLogin() {
 async function openCover() {
   const file = await openCoverFile()
   if (file) {
-    store.setCoverFile(file)
+    if (/^data:/i.test(file)) {
+      // WebUI 模式：浏览器返回的是 data URL，先保存到后端，拿到文件路径
+      const savedPath = await saveCoverImage(file)
+      store.setCoverFile(savedPath || file)
+    } else {
+      // Wails 模式：原生对话框直接返回文件路径
+      store.setCoverFile(file)
+    }
   }
 }
 

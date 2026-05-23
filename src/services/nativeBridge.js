@@ -21,6 +21,21 @@ async function apiPost(path, body) {
   } catch { /* ignore */ }
 }
 
+// 带 JSON 响应解析的 POST
+async function apiPostJSON(path, body) {
+  try {
+    const res = await fetch(API_BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: String(body ?? ''),
+    })
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+}
+
 function wailsApp() {
   return window.go && window.go.main && window.go.main.App
     ? window.go.main.App
@@ -44,8 +59,8 @@ export async function readCoverFile(filePath) {
 export async function saveCoverImage(dataUrl) {
   const app = wailsApp()
   if (app && app.SaveCoverImage) return app.SaveCoverImage(dataUrl)
-  const data = await apiPost('/cover/save', dataUrl)
-  return dataUrl
+  const data = await apiPostJSON('/cover/save', dataUrl)
+  return data?.path ?? dataUrl
 }
 
 export async function copyText(text) {
