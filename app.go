@@ -194,6 +194,28 @@ func sharedFloatStatePath() string {
 	return filepath.Join(path, "float-state.json")
 }
 
+func sharedStatePath() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return filepath.Join(os.TempDir(), "aclivehelper-state.json")
+	}
+	path := filepath.Join(dir, "ACFun Live Helper")
+	_ = os.MkdirAll(path, 0o755)
+	return filepath.Join(path, "state.json")
+}
+
+func (a *App) SetSharedState(payload string) error {
+	return os.WriteFile(sharedStatePath(), []byte(payload), 0o600)
+}
+
+func (a *App) GetSharedState() string {
+	data, err := os.ReadFile(sharedStatePath())
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
 // ========== 共享业务逻辑：封面图 ==========
 
 func (a *App) ReadCoverFile(filePath string) (string, error) {

@@ -1488,9 +1488,14 @@ import {
   setMouseClickThrough,
   setMouseClickThroughHotkey,
   onClickThroughToggle,
+  saveState,
+  loadState,
 } from "@/services/nativeBridge"
 
 const store = useLiveStore()
+
+// 启动时从后端磁盘加载共享状态，使不同浏览器/窗口使用同一份登录态和设置
+store.loadFromBackend()
 
 // === 悬浮置顶弹幕窗状态与操作 ===
 const FLOAT_OPACITY_STORAGE_KEY = "aclivehelper.floatDanmaku.opacity"

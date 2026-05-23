@@ -19,6 +19,8 @@ func registerWebUIHandlers(mux *http.ServeMux, app *App) {
 	mux.HandleFunc("/api/backend-port", jsonHandler(func() any { return map[string]int{"port": app.GetBackendPort()} }))
 	mux.HandleFunc("/api/overlay-url", jsonHandler(func() any { return jsonOrError(app.GetOverlayBaseUrl()) }))
 
+	mux.HandleFunc("/api/state", stateHandler(app))
+
 	mux.HandleFunc("/api/log-path", jsonHandler(func() any { return map[string]string{"path": app.GetLogPath()} }))
 	mux.HandleFunc("/api/theme", themeHandler(app))
 	mux.HandleFunc("/api/float-state", floatStateHandler(app))
@@ -60,16 +62,9 @@ func registerWebUIHandlers(mux *http.ServeMux, app *App) {
 	}))
 
 	mux.HandleFunc("/api/launch-mini", methodHandler("POST", func(w http.ResponseWriter, r *http.Request) {
-		// WebUI 模式：开新浏览器窗口 /mini
-		port := r.Host
-		if idx := strings.LastIndex(port, ":"); idx >= 0 {
-			port = port[idx:]
-		} else {
-			port = ":15369"
-		}
-		miniURL := "http://127.0.0.1" + port + "/mini"
-		openBrowserOnLinux(miniURL)
-		log.Printf("[WebUI] Opened mini window at %s", miniURL)
+		// WebUI 模式下前端直接 window.open('/mini')，不再经过后端。
+		// 保留此端点仅用于兼容旧版前端。
+		log.Printf("[WebUI] Launch-mini requested (frontend now opens directly)")
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -147,6 +142,21 @@ func floatStateHandler(app *App) http.HandlerFunc {
 		case "POST":
 			body, _ := io.ReadAll(r.Body)
 			_ = app.SetSharedFloatState(string(body))
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func stateHandler(app *App) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			writeJSON(w, map[string]string{"state": app.GetSharedState()})
+		case "POST":
+			body, _ := io.ReadAll(r.Body)
+			_ = app.SetSharedState(string(body))
 			w.WriteHeader(http.StatusOK)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

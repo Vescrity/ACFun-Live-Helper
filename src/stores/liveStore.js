@@ -10,7 +10,7 @@ import {
   normalizeWatchingUser,
 } from "@/services/acfunBackend"
 import { ObsWebSocketClient } from "@/services/obsWebSocket"
-import { appendLog as appendNativeLog, readCoverFile, saveCoverImage } from "@/services/nativeBridge"
+import { appendLog as appendNativeLog, readCoverFile, saveCoverImage, saveState, loadState } from "@/services/nativeBridge"
 
 const STORAGE_KEY = "aclivehelper.state.v1"
 let obsClient = null
@@ -493,6 +493,54 @@ export const useLiveStore = defineStore("live", {
         },
         ui: this.ui,
       }))
+      // 同步到后端磁盘文件，使不同浏览器/窗口共享同一份状态
+      saveState({
+        backendUrl: this.backendUrl,
+        tokenInfo: this.tokenInfo,
+        userName: this.userName,
+        userId: this.userId,
+        userProfile: this.userProfile,
+        blockList: this.room.blockList,
+        liveHistoryByUser: byUserSnapshot,
+        liveDailyStatsByUser,
+        liveTimerByUser,
+        overlay: this.overlay,
+        obs: {
+          enabled: this.obs.enabled,
+          url: this.obs.url,
+          password: this.obs.password,
+          shouldRestoreConnection: this.obs.shouldRestoreConnection,
+          autoStartLive: this.obs.autoStartLive,
+          stopStreamingAfterClose: this.obs.stopStreamingAfterClose,
+        },
+        ui: this.ui,
+      })
+    },
+    // 启动时从后端磁盘文件加载共享状态（各浏览器统一），并与当前 store 合并
+    async loadFromBackend() {
+      try {
+        const raw = await loadState()
+        if (!raw) return
+        const parsed = typeof raw === "string" ? JSON.parse(raw) : raw
+        if (!parsed || typeof parsed !== "object") return
+        // 只合并持久化字段，不覆盖运行时状态
+        if (parsed.backendUrl != null) this.backendUrl = parsed.backendUrl
+        if (parsed.tokenInfo != null) this.tokenInfo = parsed.tokenInfo
+        if (parsed.userName != null) this.userName = parsed.userName
+        if (parsed.userId != null) this.userId = parsed.userId
+        if (parsed.userProfile != null) this.userProfile = parsed.userProfile
+        if (parsed.blockList != null) this.room.blockList = parsed.blockList
+        if (parsed.liveHistoryByUser != null) this.liveHistoryByUser = parsed.liveHistoryByUser
+        if (parsed.liveDailyStatsByUser != null) this.liveDailyStatsByUser = parsed.liveDailyStatsByUser
+        if (parsed.liveTimerByUser != null) this.liveTimerByUser = parsed.liveTimerByUser
+        if (parsed.overlay != null) Object.assign(this.overlay, parsed.overlay)
+        if (parsed.obs != null) Object.assign(this.obs, parsed.obs)
+        if (parsed.ui != null) Object.assign(this.ui, parsed.ui)
+        // 合并后同步回 localStorage 确保缓存一致
+        this.persist()
+      } catch (e) {
+        console.warn("[liveStore] Failed to load state from backend:", e)
+      }
     },
     setTheme(theme) {
       this.ui.theme = theme === "dark" ? "dark" : "light"

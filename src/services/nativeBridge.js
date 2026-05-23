@@ -177,8 +177,7 @@ export function onClickThroughToggle(handler) {
 export async function launchMiniWindow() {
   const app = wailsApp()
   if (app && app.LaunchMiniWindow) return app.LaunchMiniWindow()
-  // WebUI: 后端打开新浏览器窗口
-  apiPost('/launch-mini')
+  window.open('/mini', '_blank', 'width=360,height=580')
 }
 
 export async function setSharedTheme(theme) {
@@ -209,6 +208,21 @@ export async function broadcastOverlayStyle(payload) {
   const app = wailsApp()
   if (app && app.BroadcastOverlayStyle) return app.BroadcastOverlayStyle(String(payload || ""))
   apiPost('/overlay-style', String(payload || ""))
+}
+
+// 应用状态（登录态、设置等）读写——存入后端磁盘文件，使不同浏览器/窗口共享同一份状态。
+export async function saveState(state) {
+  const json = JSON.stringify(state || {})
+  const app = wailsApp()
+  if (app && app.SetSharedState) return app.SetSharedState(json)
+  apiPost('/state', json)
+}
+
+export async function loadState() {
+  const app = wailsApp()
+  if (app && app.GetSharedState) return app.GetSharedState()
+  const data = await apiGet('/state')
+  return data?.state ?? null
 }
 
 export async function downloadPlaybackToFile(url, suggestedName) {
