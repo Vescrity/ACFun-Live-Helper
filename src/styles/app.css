@@ -4147,3 +4147,57 @@ html.is-float-window #app {
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.92);
 }
+
+/* ---- TTS 弹幕语音播报 ---- */
+.tts-section {
+  margin-top: 10px;
+}
+
+.tts-toggle {
+  font-weight: 600;
+}
+
+.tts-toggle span {
+  font-size: 13px !important;
+  color: var(--fg, #e0d7e8) !important;
+}
+
+.tts-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-left: 22px;
+}
+
+.tts-sliders .block-label.small {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tts-sliders span {
+  color: var(--fg, #e0d7e8);
+  font-size: 12px;
+}
+
+.tts-sliders input[type="range"] {
+  flex: 1;
+}
+
+.tts-val {
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.tts-filters {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  padding-left: 22px;
+}
+
+.tts-filters .checkbox-label.compact span {
+  font-size: 12px;
+}

@@ -540,6 +540,42 @@
                 <button class="command" @click="resetUiScale">重置</button>
               </div>
             </label>
+
+            <!-- TTS 弹幕语音播报 -->
+            <div class="tts-section">
+              <label class="checkbox-label tts-toggle">
+                <input v-model="store.tts.enabled" type="checkbox" @change="store.toggleTTS" />
+                <span>🔊 弹幕语音播报（TTS）</span>
+              </label>
+              <template v-if="store.tts.enabled">
+                <div class="tts-sliders">
+                  <label class="block-label small">
+                    <span>语速</span>
+                    <input v-model.number="store.tts.rate" type="range" min="0.5" max="2" step="0.1" @change="store.setTTSRate(store.tts.rate)" />
+                    <span class="tts-val">{{ store.tts.rate.toFixed(1) }}x</span>
+                  </label>
+                  <label class="block-label small">
+                    <span>音量</span>
+                    <input v-model.number="store.tts.volume" type="range" min="0" max="1" step="0.1" @change="store.setTTSVolume(store.tts.volume)" />
+                    <span class="tts-val">{{ Math.round(store.tts.volume * 100) }}%</span>
+                  </label>
+                </div>
+                <div class="tts-filters">
+                  <label class="checkbox-label compact">
+                    <input v-model="store.tts.filterGift" type="checkbox" @change="store.persist" />
+                    <span>礼物</span>
+                  </label>
+                  <label class="checkbox-label compact">
+                    <input v-model="store.tts.filterJoin" type="checkbox" @change="store.persist" />
+                    <span>进场</span>
+                  </label>
+                  <label class="checkbox-label compact">
+                    <input v-model="store.tts.filterFollow" type="checkbox" @change="store.persist" />
+                    <span>关注</span>
+                  </label>
+                </div>
+              </template>
+            </div>
           </div>
 
           <!-- 开播体检看板 -->

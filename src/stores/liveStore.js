@@ -11,6 +11,7 @@ import {
 } from "@/services/acfunBackend"
 import { ObsWebSocketClient } from "@/services/obsWebSocket"
 import { appendLog as appendNativeLog, readCoverFile, saveCoverImage } from "@/services/nativeBridge"
+import { useTTS, danmakuToText, shouldSpeakDanmaku } from "@/services/tts"
 
 const STORAGE_KEY = "aclivehelper.state.v1"
 let obsClient = null
@@ -288,6 +289,18 @@ function isNotLiveError(error) {
   return /未开播|已关播|380023|129004/i.test(formatError(error))
 }
 
+function initTTS(saved) {
+  const tts = saved.tts || {}
+  return {
+    enabled: tts.enabled === true,
+    rate: Number(tts.rate) || 1.1,
+    volume: Number(tts.volume) || 0.8,
+    filterGift: tts.filterGift !== false,
+    filterJoin: tts.filterJoin !== false,
+    filterFollow: tts.filterFollow !== false,
+  }
+}
+
 function defaultState() {
   const saved = loadSavedState()
   const savedOverlay = saved.overlay || {}
@@ -399,6 +412,7 @@ function defaultState() {
       scale: Number(savedOverlay.scale) > 0 ? Number(savedOverlay.scale) : 1,
       convertChinese: savedOverlay.convertChinese || "none",
     },
+    tts: initTTS(saved),
     logs: [],
     progress: "",
     eventsBound: false,
@@ -492,6 +506,7 @@ export const useLiveStore = defineStore("live", {
           stopStreamingAfterClose: this.obs.stopStreamingAfterClose,
         },
         ui: this.ui,
+        tts: { ...this.tts },
       }))
     },
     setTheme(theme) {
@@ -511,6 +526,21 @@ export const useLiveStore = defineStore("live", {
     },
     toggleGuardianClubVisible() {
       this.ui.guardianClubVisible = !this.ui.guardianClubVisible
+      this.persist()
+    },
+    toggleTTS() {
+      this.tts.enabled = !this.tts.enabled
+      if (this.tts.enabled) useTTS().init()
+      this.persist()
+    },
+    setTTSRate(value) {
+      this.tts.rate = Math.min(2, Math.max(0.5, Number(value) || 1))
+      useTTS().config.rate = this.tts.rate
+      this.persist()
+    },
+    setTTSVolume(value) {
+      this.tts.volume = Math.min(1, Math.max(0, Number(value) || 0.8))
+      useTTS().config.volume = this.tts.volume
       this.persist()
     },
     // 把 liveHistoryByUser[当前 userId] 加载到 this.liveHistory（账号切换时调用）
@@ -679,6 +709,7 @@ export const useLiveStore = defineStore("live", {
     },
     async connect() {
       this.bindBackendEvents()
+      useTTS().init()
       acfunBackend.setUrl(this.backendUrl)
       await acfunBackend.connect()
       this.connected = true
@@ -962,6 +993,10 @@ export const useLiveStore = defineStore("live", {
         if (!this.isDuplicateDanmaku(item)) {
           this.room.danmakuList.unshift(item)
           newDanmakuCount += 1
+          // TTS 语音播报
+          if (this.tts.enabled && shouldSpeakDanmaku(item, this.tts)) {
+            try { useTTS().speak(danmakuToText(item)) } catch (_) { /* ignore */ }
+          }
         }
       })
       this.room.danmakuList = this.room.danmakuList.slice(0, 300)

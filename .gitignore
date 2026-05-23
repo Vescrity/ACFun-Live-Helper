@@ -2,10 +2,7 @@
 Thumbs.db
 Desktop.ini
 node_modules/
-# Frontend build output (Vite) — directory must exist for Go embed to compile.
-# .gitkeep ensures the directory is tracked in git even when empty.
-/dist/*
-!/dist/.gitkeep
+/dist
 dist-ssr/
 .vite/
 coverage/
