@@ -5,16 +5,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
-	syswin "golang.org/x/sys/windows"
-
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:dist
@@ -23,7 +21,7 @@ var assets embed.FS
 func main() {
 	isMini := consumeMiniLaunchToken()
 
-	if isMini {
+	if isMini && runtime.GOOS == "windows" {
 		go watchParentProcess()
 	}
 
@@ -56,7 +54,7 @@ func main() {
 		webviewDataPath = sharedWebviewDataPath("mini")
 	}
 
-	err := wails.Run(&options.App{
+	appOptions := &options.App{
 		Title:            appTitle,
 		Width:            appWidth,
 		Height:           appHeight,
@@ -73,68 +71,51 @@ func main() {
 		Bind: []interface{}{
 			app,
 		},
-		Windows: &windows.Options{
-			WebviewUserDataPath:              webviewDataPath,
-			WebviewGpuIsDisabled:             !isMini,
-			Theme:                            windows.SystemDefault,
-			WebviewIsTransparent:             isMini,
-			WindowIsTranslucent:              isMini,
-			BackdropType:                     windows.None,
-			DisableFramelessWindowDecorations: isMini,
-		},
 		EnableDefaultContextMenu: true,
-	})
+	}
+
+	// Platform-specific configuration
+	if runtime.GOOS == "windows" {
+		appOptions.Windows = getWindowsOptions(webviewDataPath, isMini)
+	} else if runtime.GOOS == "linux" {
+		appOptions.Linux = getLinuxOptions()
+	} else if runtime.GOOS == "darwin" {
+		appOptions.Mac = getMacOptions()
+	}
+
+	err := wails.Run(appOptions)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
 func sharedWebviewDataPath(profile string) string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return ""
+	var configDir string
+	var err error
+
+	if runtime.GOOS == "linux" {
+		// Use XDG_CONFIG_HOME on Linux, fallback to ~/.config
+		configDir = os.Getenv("XDG_CONFIG_HOME")
+		if configDir == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return ""
+			}
+			configDir = filepath.Join(home, ".config")
+		}
+	} else {
+		// Windows and macOS use standard config directory
+		configDir, err = os.UserConfigDir()
+		if err != nil {
+			return ""
+		}
 	}
-	path := filepath.Join(dir, "ACFun Live Helper", "webview", profile)
+
+	path := filepath.Join(configDir, "ACFun Live Helper", "webview", profile)
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return ""
 	}
 	return path
-}
-
-// watchParentProcess 监听父进程 (ACLIVE_PARENT_PID) 是否还活着，父进程一旦消失就退出本进程，
-// 确保主窗口以任何方式（正常关闭、异常退出、wails dev 重启）结束时，悬浮窗都会一并关闭。
-func watchParentProcess() {
-	pidStr := os.Getenv("ACLIVE_PARENT_PID")
-	if pidStr == "" {
-		return
-	}
-	pid64, err := strconv.ParseUint(pidStr, 10, 32)
-	if err != nil || pid64 == 0 {
-		return
-	}
-	pid := uint32(pid64)
-
-	const stillActive uint32 = 259
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	for range ticker.C {
-		handle, err := syswin.OpenProcess(syswin.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
-		if err != nil {
-			log.Printf("[Mini] Parent process %d not reachable: %v; exiting", pid, err)
-			os.Exit(0)
-		}
-		var code uint32
-		err = syswin.GetExitCodeProcess(handle, &code)
-		_ = syswin.CloseHandle(handle)
-		if err != nil {
-			log.Printf("[Mini] Failed to query parent exit code: %v; exiting", err)
-			os.Exit(0)
-		}
-		if code != stillActive {
-			log.Printf("[Mini] Parent process %d exited (code=%d); exiting", pid, code)
-			os.Exit(0)
-		}
-	}
 }
 
 func consumeMiniLaunchToken() bool {
