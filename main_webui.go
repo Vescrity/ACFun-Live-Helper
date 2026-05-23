@@ -51,6 +51,18 @@ func main() {
 
 	mux := http.NewServeMux()
 	registerWebUIHandlers(mux, app)
+
+	// /mini 路由：模拟 mini 悬浮窗模式，让前端 isMiniMode 返回 true
+	mux.HandleFunc("/mini", func(w http.ResponseWriter, r *http.Request) {
+		data, err := webuiAssets.ReadFile("dist/index.html")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(data)
+	})
+
 	// Serve embedded dist/ frontend (built via npm run build, embedded at compile time).
 	// No runtime dependency on disk directories.
 	mux.Handle("/", webuiRootHandler())

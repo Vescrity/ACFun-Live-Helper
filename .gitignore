@@ -43,6 +43,7 @@ lerna-debug.log*
 *.exe
 *.exe~
 *.dll
+*.gz
 *.so
 *.dylib
 *.test
