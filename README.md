@@ -55,8 +55,8 @@
 ### 悬浮 & 主题
 - 暗 / 亮主题切换，自适应配色
 - 侧栏可折叠为图标，支持手动展开
-- **悬浮置顶弹幕窗**（始终在最前），支持以下鼠标穿透与设置特性：
-  - **👻 鼠标穿透**：左键点击 👻 按钮进入穿透状态（右上角显示“👻 穿透中”提示，鼠标事件落到下层游戏/窗口）。
+- **悬浮置顶弹幕窗**（始终在最前），支持以下鼠标穿透与设置特性（Windows）：
+  - **👻 鼠标穿透**：左键点击 👻 按钮进入穿透状态（右上角显示"👻 穿透中"提示，鼠标事件落到下层游戏/窗口）。
   - **🎚️ 三态设置循环**：Header 置顶设置按钮可循环切换底部状态（1. 打开透明度滑杆设置 ➔ 2. 切换至穿透热键改键 ➔ 3. 关闭设置）。
   - **⌨️ 全局热键改键**：可自定义鼠标穿透退出热键（默认 `Ctrl+Alt+Shift+G`）。支持自定义修饰键与 A-Z/0-9/F1-F12，按 Esc 取消，支持状态与热键持久化。
 
@@ -67,7 +67,7 @@
 
 ## 技术栈
 
-- **Wails v2** — Go ↔ Webview2 桥接
+- **Wails v2** — Go ↔ Webview2/WebKit 桥接
 - **Go 1.21+** — 主进程、HTTP / SSE / 系统监控 / 文件下载
 - **Vue 3 + Pinia** — 前端 UI 与状态管理
 - **Vite 8** — 前端构建
@@ -78,28 +78,28 @@
 
 **运行环境**
 
-- Windows 10 / 11
-- [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（Win11 已内置）
+- **Windows 10 / 11** — [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（Win11 已内置）
+- **Linux** — GTK 3.10+ 或 libwebkit2gtk-4.0
+- **macOS** — 10.13 或更高
 
 **开发工具链**
 
 - Go 1.21 或更高
 - Node.js 18 或更高
 - Wails v2 CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
-- 推荐 PowerShell
 
 ## 开发
 
 安装依赖：
 
-```powershell
+```bash
 npm install
 go mod tidy
 ```
 
 启动开发模式（前端热重载 + Wails 自动重启 Go 后端）：
 
-```powershell
+```bash
 npm run wails:dev
 # 或
 wails dev
@@ -107,21 +107,21 @@ wails dev
 
 后端客户端单元测试：
 
-```powershell
+```bash
 npm run test:backend-client
 ```
 
 ## 构建
 
-构建当前平台：
+### 当前平台构建
 
-```powershell
+```bash
 npm run wails:build
 ```
 
-构建 Windows amd64：
+### Windows amd64
 
-```powershell
+```bash
 npm run wails:build:win
 ```
 
@@ -132,6 +132,38 @@ powershell -ExecutionPolicy Bypass -File .\build-windows.ps1
 ```
 
 构建产物默认位于 `build\bin\ACFun Live Helper.exe`（约 16 MB）。
+
+### Linux amd64
+
+```bash
+npm run wails:build:linux
+# 或使用构建脚本
+bash ./build-linux.sh
+```
+
+构建产物默认位于 `build/bin/acfun-live-helper`。
+
+**Linux 依赖（Ubuntu/Debian）：**
+
+```bash
+sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+```
+
+**Linux 依赖（Fedora/RHEL）：**
+
+```bash
+sudo dnf install -y gtk3-devel webkit2gtk3-devel
+```
+
+### macOS 通用二进制（Intel + Apple Silicon）
+
+```bash
+npm run wails:build:mac
+# 或使用构建脚本
+bash ./build-mac.sh
+```
+
+构建产物默认位于 `build/bin/ACFun Live Helper.app`。
 
 ## 项目结构
 
@@ -147,8 +179,14 @@ powershell -ExecutionPolicy Bypass -File .\build-windows.ps1
 ├── wailsjs/              # Wails 生成的前后端桥接代码
 ├── app.go                # Wails 应用入口
 ├── main.go               # Go 主入口
+├── main_windows.go       # Windows 平台特定代码
+├── main_linux.go         # Linux 平台特定代码
+├── main_mac.go           # macOS 平台特定代码
 ├── package.json          # 前端脚本与依赖
-└── wails.json            # Wails 项目配置
+├── wails.json            # Wails 项目配置
+├── build-windows.ps1     # Windows 构建脚本
+├── build-linux.sh        # Linux 构建脚本
+└── build-mac.sh          # macOS 构建脚本
 ```
 
 ## 下载
@@ -158,19 +196,42 @@ powershell -ExecutionPolicy Bypass -File .\build-windows.ps1
 - 最新版本：<https://github.com/epstomai/ACFun-Live-Helper/releases/latest>
 - 全部版本：<https://github.com/epstomai/ACFun-Live-Helper/releases>
 
+### Windows
+
 下载 `ACFun Live Helper.exe` 双击即可运行。首次启动会在 `%AppData%\aclivehelper` 创建账号配置目录。
+
+### Linux
+
+下载 `acfun-live-helper`，可直接运行或放入 `/usr/local/bin` 以全局访问：
+
+```bash
+chmod +x acfun-live-helper
+./acfun-live-helper
+# 或
+sudo mv acfun-live-helper /usr/local/bin/
+acfun-live-helper
+```
+
+配置文件位于 `~/.config/ACFun Live Helper/`。
+
+### macOS
+
+下载 `ACFun Live Helper.app`，双击打开或拖入 Applications 文件夹。
+
+配置文件位于 `~/Library/Application Support/ACFun Live Helper/`。
 
 ## 已知问题 / FAQ
 
 - **登录失败 / 滑块验证**：A 站风控会偶发要求滑块验证，本助手暂未集成滑块求解，请到网页版手动通过一次后再尝试。
 - **录播下载文件后缀是 `.ts`**：A 站录播以 HLS 切片下发，拼接结果就是 MPEG-TS 流。VLC 可直接播放；如需 mp4：
 
-  ```powershell
+  ```bash
   ffmpeg -i "xxx.ts" -c copy "xxx.mp4"
   ```
 
 - **OBS 浏览器源不刷新**：本版本已改用 SSE 实时推送，如果仍未生效，请确认 URL 端口是 `:15370` 且 OBS 浏览器源未启用 ``Shutdown source when not visible``。
 - **本场总结里时长 00:00:00**：通常是关播时 `GET_SUMMARY` 返回失败，助手会用本场计时器估算 duration 兜底，下次进入数据页会再尝试拉取真实总结。
+- **Linux WebView 不稳定**：某些 Linux 发行版的 WebKit 实现可能不完全兼容。如遇到问题，请升级系统或 WebKit 相关库。
 
 ## 开源协议
 
@@ -182,7 +243,7 @@ powershell -ExecutionPolicy Bypass -File .\build-windows.ps1
 
 - **[acfundanmu](https://github.com/orzogc/acfundanmu)** by **@orzogc** — A 站弹幕协议与开播 API 的核心实现，本助手的 `third_party/acfundanmu` 完整内嵌该项目源码。
 - **[acfunlive-backend](https://github.com/orzogc/acfunlive-backend)** by **@orzogc** — 直播会话管理 / WebSocket / 命令分发后端，本助手的 `backend/` 在其基础上裁剪集成。
-- **[Wails](https://wails.io/)** — Go + Webview2 桌面应用方案。
+- **[Wails](https://wails.io/)** — Go + Webview 桌面应用方案，支持多平台。
 - **[Lucide](https://lucide.dev/)** — 简洁现代的图标集。
 
 非常感谢上述项目让 ACFun Live Helper 成为可能。
