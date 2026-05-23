@@ -19,14 +19,6 @@ let obsClientUnsubscribers = []
 let obsObservedStreaming = false
 let obsPreserveRestoreOnClose = false
 
-let backendSaveTimer = null
-function debouncedSaveToBackend(state) {
-  if (backendSaveTimer) clearTimeout(backendSaveTimer)
-  backendSaveTimer = setTimeout(() => {
-    saveAppState(JSON.stringify(state)).catch(() => {})
-  }, 500)
-}
-
 function loadSavedState() {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}")
@@ -502,8 +494,13 @@ export const useLiveStore = defineStore("live", {
         ui: this.ui,
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(stateObj))
-      // 同步到后端文件存储，使所有浏览器窗口共享状态
-      debouncedSaveToBackend(stateObj)
+    },
+    // 将当前完整配置保存到后端文件（供登入/登出时自动调用，或用户手动保存）
+    async saveConfigToBackend() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY)
+        if (raw) await saveAppState(raw)
+      } catch { /* 后端不可用时忽略 */ }
     },
     setTheme(theme) {
       this.ui.theme = theme === "dark" ? "dark" : "light"
@@ -783,6 +780,7 @@ export const useLiveStore = defineStore("live", {
       await this.refreshUser()
       this.loadHistoryForCurrentUser()
       this.persist()
+      this.saveConfigToBackend()
       this.log(`登录成功：${this.userName || this.userId}`)
       await this.loadStartupLiveData()
       await this.startDanmu()
@@ -814,6 +812,7 @@ export const useLiveStore = defineStore("live", {
         await this.refreshUser()
         this.loadHistoryForCurrentUser()
         this.persist()
+        this.saveConfigToBackend()
         this.log(`二维码登录成功：${this.userName || this.userId}`)
         await this.loadStartupLiveData()
         await this.startDanmu()
@@ -851,6 +850,7 @@ export const useLiveStore = defineStore("live", {
       this.room.accumulatedTime = 0
       acfunBackend.close()
       this.persist()
+      this.saveConfigToBackend()
     },
     async refreshUser() {
       if (!this.userId) {

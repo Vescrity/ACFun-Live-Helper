@@ -237,6 +237,9 @@
           <button class="icon-button" title="刷新" @click="refreshCurrent">
             <RefreshCw :size="17" />
           </button>
+          <button v-if="!isMiniWindowProcess" class="icon-button" title="保存配置到本地（跨窗口同步）" @click="saveConfig">
+            <Save :size="17" />
+          </button>
           <button v-if="store.isLoggedIn" class="icon-button danger" title="登出" @click="store.logout">
             <LogOut :size="17" />
           </button>
@@ -1457,6 +1460,7 @@ import {
   Layers,
   MessageSquare,
   SlidersHorizontal,
+  Save,
 } from "@lucide/vue"
 import { useLiveStore } from "@/stores/liveStore"
 import HsvColorPicker from "@/components/HsvColorPicker.vue"
@@ -2835,6 +2839,15 @@ function refreshCurrent() {
     run(async () => {
       await store.loadTranscodeInfo()
     })
+  }
+}
+
+async function saveConfig() {
+  try {
+    await store.saveConfigToBackend()
+    showToast("配置已保存")
+  } catch {
+    showToast("保存配置失败")
   }
 }
 
