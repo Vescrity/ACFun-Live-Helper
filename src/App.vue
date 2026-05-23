@@ -2625,6 +2625,7 @@ let tickerTimer = 0
 let diagnosticTimer = 0
 let floatThemeTimer = 0
 let floatRuntimeTimer = 0
+let stateSyncTimer = 0
 let coverPreviewRequest = 0
 
 watch(() => store.ui.theme, (theme) => {
@@ -2644,6 +2645,8 @@ onMounted(async () => {
   window.addEventListener("blur", handleFloatMouseUp)
   document.addEventListener("mouseleave", handleFloatMouseUp)
   await initializeNativeRuntime()
+  // 从后端文件存储加载共享状态（登录信息等跨窗口/浏览器同步）
+  await store.loadFromBackend()
   store.restoreObsConnection().catch(() => {})
   await store.restoreSession()
   refreshTimer = window.setInterval(() => {
@@ -2678,6 +2681,19 @@ onMounted(async () => {
     await syncFloatTheme()
     floatThemeTimer = window.setInterval(syncFloatTheme, 500)
     floatRuntimeTimer = window.setInterval(syncFloatRuntimeState, 1000)
+    // 定期从后端同步共享状态（登录信息等）
+    stateSyncTimer = window.setInterval(async () => {
+      const loginChanged = await store.loadFromBackend()
+      if (loginChanged) {
+        if (store.isLoggedIn) {
+          // 其他窗口登录了，恢复会话
+          store.restoreSession().catch(() => {})
+        } else {
+          // 其他窗口登出了，清理本地状态
+          store.stopDanmu()
+        }
+      }
+    }, 2000)
 
     // 监听全局热键切换鼠标穿透
     onClickThroughToggle(toggleClickThrough)
@@ -2696,6 +2712,19 @@ onMounted(async () => {
     setSharedTheme(store.ui.theme).catch(() => {})
     await publishFloatRuntimeState()
     floatRuntimeTimer = window.setInterval(publishFloatRuntimeState, 1000)
+    // 定期从后端同步共享状态（登录信息等）
+    stateSyncTimer = window.setInterval(async () => {
+      const loginChanged = await store.loadFromBackend()
+      if (loginChanged) {
+        if (store.isLoggedIn) {
+          // 其他窗口登录了，恢复会话
+          store.restoreSession().catch(() => {})
+        } else {
+          // 其他窗口登出了，清理本地状态
+          store.stopDanmu()
+        }
+      }
+    }, 2000)
   }
 })
 
@@ -2706,6 +2735,7 @@ onUnmounted(() => {
   window.clearInterval(diagnosticTimer)
   window.clearInterval(floatThemeTimer)
   window.clearInterval(floatRuntimeTimer)
+  window.clearInterval(stateSyncTimer)
   window.clearTimeout(sidebarToggleFlashTimer)
   window.removeEventListener("resize", updateExtremeNarrowSidebar)
   window.removeEventListener("wheel", handleFloatWheel)

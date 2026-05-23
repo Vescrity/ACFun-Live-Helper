@@ -10,7 +10,7 @@ import {
   normalizeWatchingUser,
 } from "@/services/acfunBackend"
 import { ObsWebSocketClient } from "@/services/obsWebSocket"
-import { appendLog as appendNativeLog, readCoverFile, saveCoverImage } from "@/services/nativeBridge"
+import { appendLog as appendNativeLog, readCoverFile, saveCoverImage, loadAppState, saveAppState } from "@/services/nativeBridge"
 
 const STORAGE_KEY = "aclivehelper.state.v1"
 let obsClient = null
@@ -18,6 +18,14 @@ let obsClientKey = ""
 let obsClientUnsubscribers = []
 let obsObservedStreaming = false
 let obsPreserveRestoreOnClose = false
+
+let backendSaveTimer = null
+function debouncedSaveToBackend(state) {
+  if (backendSaveTimer) clearTimeout(backendSaveTimer)
+  backendSaveTimer = setTimeout(() => {
+    saveAppState(JSON.stringify(state)).catch(() => {})
+  }, 500)
+}
 
 function loadSavedState() {
   try {
@@ -465,7 +473,7 @@ export const useLiveStore = defineStore("live", {
       const liveTimerByUser = normalizeLiveTimerByUser(this.liveTimerByUser)
       this.liveDailyStatsByUser = liveDailyStatsByUser
       this.liveTimerByUser = liveTimerByUser
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      const stateObj = {
         backendUrl: this.backendUrl,
         tokenInfo: this.tokenInfo,
         userName: this.userName,
@@ -492,7 +500,10 @@ export const useLiveStore = defineStore("live", {
           stopStreamingAfterClose: this.obs.stopStreamingAfterClose,
         },
         ui: this.ui,
-      }))
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stateObj))
+      // 同步到后端文件存储，使所有浏览器窗口共享状态
+      debouncedSaveToBackend(stateObj)
     },
     setTheme(theme) {
       this.ui.theme = theme === "dark" ? "dark" : "light"
@@ -500,6 +511,52 @@ export const useLiveStore = defineStore("live", {
     },
     toggleTheme() {
       this.setTheme(this.ui.theme === "dark" ? "light" : "dark")
+    },
+    // 从后端文件存储加载共享状态（跨窗口/浏览器同步）
+    // 返回 true 表示登录状态发生了变化
+    async loadFromBackend() {
+      try {
+        const raw = await loadAppState()
+        if (!raw) return false
+        const backendState = JSON.parse(raw)
+        if (!backendState || typeof backendState !== "object") return false
+        // 检测登录状态是否变化
+        const prevTokenInfo = this.tokenInfo
+        const prevUserId = this.userId
+        // 合并后端状态到当前 store（后端数据优先，实现跨窗口同步）
+        if (backendState.backendUrl !== undefined) this.backendUrl = backendState.backendUrl
+        if (backendState.tokenInfo !== undefined) this.tokenInfo = backendState.tokenInfo
+        if (backendState.userName !== undefined) this.userName = backendState.userName
+        if (backendState.userId !== undefined) this.userId = backendState.userId
+        if (backendState.userProfile !== undefined) this.userProfile = backendState.userProfile
+        if (backendState.blockList !== undefined) this.room.blockList = backendState.blockList
+        if (backendState.liveTitle !== undefined) this.live.title = backendState.liveTitle
+        if (backendState.coverFile !== undefined) this.live.coverFile = backendState.coverFile
+        if (backendState.coverHistory !== undefined) this.live.coverHistory = backendState.coverHistory
+        if (backendState.coverCrops !== undefined) this.live.coverCrops = backendState.coverCrops
+        if (backendState.coverAspect !== undefined) this.live.coverAspect = backendState.coverAspect
+        if (backendState.categoryId !== undefined) this.live.categoryId = backendState.categoryId
+        if (backendState.subCategoryId !== undefined) this.live.subCategoryId = backendState.subCategoryId
+        if (backendState.liveHistoryByUser !== undefined) this.liveHistoryByUser = backendState.liveHistoryByUser
+        if (backendState.liveDailyStatsByUser !== undefined) this.liveDailyStatsByUser = backendState.liveDailyStatsByUser
+        if (backendState.liveTimerByUser !== undefined) this.liveTimerByUser = backendState.liveTimerByUser
+        if (backendState.overlay !== undefined) this.overlay = backendState.overlay
+        if (backendState.obs !== undefined) Object.assign(this.obs, backendState.obs)
+        if (backendState.ui !== undefined) Object.assign(this.ui, backendState.ui)
+        // 加载当前用户的历史记录
+        this.loadHistoryForCurrentUser()
+        // 同步到 localStorage 作为本地缓存
+        localStorage.setItem(STORAGE_KEY, raw)
+        // 检测登录状态是否变化
+        const currTokenInfo = this.tokenInfo
+        const currUserId = this.userId
+        const tokenChanged = JSON.stringify(prevTokenInfo) !== JSON.stringify(currTokenInfo)
+        const userChanged = String(prevUserId) !== String(currUserId)
+        return tokenChanged || userChanged
+      } catch {
+        // 后端不可用时忽略，使用 localStorage 数据
+        return false
+      }
     },
     toggleSidebar() {
       this.ui.sidebarCollapsed = !this.ui.sidebarCollapsed
