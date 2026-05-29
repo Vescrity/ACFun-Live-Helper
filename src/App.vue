@@ -374,7 +374,7 @@
               <h3>今日开播成就</h3>
               <span class="achievements-subtitle">Today's Live Stats</span>
             </div>
-            
+
             <div class="achievements-grid">
               <div class="achievement-card duration-card">
                 <div class="achievement-icon-wrapper">
@@ -782,6 +782,92 @@
           <div class="cover-panel-actions">
             <button class="command" @click="openCover"><FolderOpen :size="16" /><span>上传</span></button>
             <button class="command" @click="openCoverEditor"><Images :size="16" /><span>编辑封面</span></button>
+          </div>
+        </div>
+
+        <div class="panel tts-panel" :class="{ 'panel-online': ttsSettings.enabled }">
+          <div class="panel-head">
+            <h3>语音播报 (TTS)</h3>
+            <span>{{ ttsSettings.enabled ? '已开启' : '已关闭' }}</span>
+          </div>
+          <div class="toggle-row" style="margin-top: 10px;">
+            <label class="checkbox-label">
+              <input v-model="ttsSettings.enabled" type="checkbox" @change="!ttsSettings.enabled && stopAll()" />
+              <span>启用全局播报</span>
+            </label>
+          </div>
+
+          <!-- === 菜单 1：语言代码选择 === -->
+          <div v-if="ttsSettings.enabled" class="form-grid" style="margin-top: 10px; margin-bottom: 5px;">
+            <label style="grid-column: span 2;">
+              <span>1. 语言代码选择 (lang)</span>
+              <select v-model="ttsSettings.selectedLang" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc; background: white; font-size: 14px; margin-top: 5px; font-family: monospace;">
+                <option v-for="lang in uniqueLangs" :key="lang" :value="lang">
+                  {{ lang }}
+                </option>
+                <option v-if="uniqueLangs.length === 0" value="">
+                  未检测到系统中文代码
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <!-- === 菜单 2：具体声音选择 === -->
+          <div v-if="ttsSettings.enabled" class="form-grid" style="margin-top: 5px; margin-bottom: 10px;">
+            <label style="grid-column: span 2;">
+              <span>2. 发音人选择 (Voice)</span>
+              <select v-model="ttsSettings.selectedVoiceName" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc; background: white; font-size: 14px; margin-top: 5px;">
+                <option v-for="voice in filteredVoices" :key="voice.name" :value="voice.name">
+                  {{ voice.name }}
+                </option>
+                <option v-if="filteredVoices.length === 0" value="">
+                  当前代码下无可用发音人
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <div v-if="ttsSettings.enabled" class="toggle-row" style="border-top: 1px solid #f0f0f0; padding-top: 10px; margin-top: 10px;">
+            <label class="checkbox-label" title="播报普通观众的文字弹幕">
+              <input v-model="ttsSettings.readDanmaku" type="checkbox" />
+              <span>播报弹幕</span>
+            </label>
+            <label class="checkbox-label" title="播报送礼、投香蕉信息">
+              <input v-model="ttsSettings.readGift" type="checkbox" />
+              <span>播报送礼</span>
+            </label>
+            <label class="checkbox-label" title="播报关注主播的信息">
+              <input v-model="ttsSettings.readFollow" type="checkbox" />
+              <span>播报关注</span>
+            </label>
+            <label class="checkbox-label" title="播报进入直播间（人多时不建议开启）">
+              <input v-model="ttsSettings.readJoinRoom" type="checkbox" />
+              <span>播报进入</span>
+            </label>
+          </div>
+
+          <div v-if="ttsSettings.enabled" class="form-grid" style="margin-top: 10px;">
+            <label>
+              <span>语速 ({{ ttsSettings.rate }})</span>
+              <input v-model.number="ttsSettings.rate" type="range" min="0.5" max="2.5" step="0.1" />
+            </label>
+            <label>
+              <span>音量 ({{ ttsSettings.volume }})</span>
+              <input v-model.number="ttsSettings.volume" type="range" min="0" max="1" step="0.1" />
+            </label>
+            <label>
+              <span>音调 ({{ ttsSettings.pitch }})</span>
+              <input v-model.number="ttsSettings.pitch" type="range" min="0.1" max="2.0" step="0.1" />
+            </label>
+          </div>
+          
+          <div v-if="ttsSettings.enabled" class="cover-panel-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+            <button class="command" @click="speak('语音测试成功，声音正常。')" style="background: #28a745; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer;">
+              <span>语音测试</span>
+            </button>
+            <button class="command" @click="stopAll" style="background: #dc3545; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer;">
+              <span>一键静音</span>
+            </button>
           </div>
         </div>
 
@@ -1396,6 +1482,7 @@
 </template>
 
 <script setup>
+import { ttsSettings, stopAll, uniqueLangs, filteredVoices, speak } from "@/services/tts";
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue"
 import {
   Activity,
@@ -2656,7 +2743,7 @@ onMounted(async () => {
   tickerTimer = window.setInterval(() => {
     store.room.ticker++
   }, 1000)
-  
+
   // 启动开播体检定时器
   updateDiagnosticData()
   diagnosticTimer = window.setInterval(updateDiagnosticData, 3000)
