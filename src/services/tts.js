@@ -40,21 +40,27 @@ export const filteredVoices = ref([]);
 export function updateVoices() {
   if (!synth) return;
   const all = synth.getVoices();
+  console.log("[TTS Debug] 系统原始声音列表:", all);
 
-  const chineseVoices = all.filter(v => {
-    const lang = v.lang.toLowerCase();
-    const name = v.name.toLowerCase();
-    return lang.includes('cmn') || lang.includes('zh') || lang.includes('cn') || lang.includes('yue') || name.includes('chinese');
-  });
+  const allLangs = Array.from(new Set(all.map(v => v.lang)));
 
-  const langSet = new Set(chineseVoices.map(v => v.lang));
-  uniqueLangs.value = Array.from(langSet).sort((a, b) => a.localeCompare(b));
+  const isChineseLang = (lang) => {
+    const l = lang.toLowerCase();
+    return l.includes('zh') || l.includes('cn') || l.includes('cmn') || l.includes('yue');
+  };
+
+  const chineseLangs = allLangs.filter(isChineseLang).sort((a, b) => a.localeCompare(b));
+  const otherLangs = allLangs.filter(lang => !isChineseLang(lang)).sort((a, b) => a.localeCompare(b));
+
+  uniqueLangs.value = [...chineseLangs, ...otherLangs];
+  console.log("[TTS Debug] 系统语言代码列表:", uniqueLangs.value);
 
   if (!ttsSettings.selectedLang && uniqueLangs.value.length > 0) {
+    // 优先匹配 cmn 或 zh-CN
     const defaultLang = uniqueLangs.value.find(lang => {
       const l = lang.toLowerCase();
       return l.includes('cmn') || l.includes('zh-cn');
-    }) || uniqueLangs.value[0];
+    }) || chineseLangs[0] || uniqueLangs.value[0];
 
     ttsSettings.selectedLang = defaultLang;
   }
