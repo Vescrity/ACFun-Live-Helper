@@ -17,6 +17,31 @@ func registerWebUIHandlers(mux *http.ServeMux, app *App) {
 	mux.HandleFunc("/api/fonts", jsonHandler(func() any { return app.GetSystemFonts() }))
 	mux.HandleFunc("/api/backend-port", jsonHandler(func() any { return map[string]int{"port": app.GetBackendPort()} }))
 	mux.HandleFunc("/api/overlay-url", jsonHandler(func() any { return jsonOrError(app.GetOverlayBaseUrl()) }))
+	mux.HandleFunc("/api/tts/voices", jsonHandler(func() any { return jsonOrError(app.GetTTSVoices()) }))
+	mux.HandleFunc("/api/tts/generate", methodHandler("POST", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Provider     string  `json:"provider"`
+			VoiceName    string  `json:"voiceName"`
+			Text         string  `json:"text"`
+			Speed        float64 `json:"speed"`
+			Volume       int     `json:"volume"`
+			Pitch        float64 `json:"pitch"`
+			LanguageHint string  `json:"languageHint"`
+		}
+		// 解析前端传过来的语音合成参数
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// 调用 Go 底层 Edge TTS 进行合成，返回 Base64 字符串
+		base64Uri, err := app.GenerateTTS(req.Provider, req.VoiceName, req.Text, req.Speed, req.Volume, req.Pitch, req.LanguageHint)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// 将 base64 字符串返回给前端
+		writeJSON(w, map[string]string{"path": base64Uri})
+	}))
 
 	mux.HandleFunc("/api/log-path", jsonHandler(func() any { return map[string]string{"path": app.GetLogPath()} }))
 	mux.HandleFunc("/api/theme", themeHandler(app))

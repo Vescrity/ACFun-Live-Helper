@@ -263,7 +263,11 @@ export async function downloadPlaybackToFile(url, suggestedName) {
 
 export async function getTTSVoices() {
   const app = wailsApp()
-  return app && app.GetTTSVoices ? app.GetTTSVoices() : []
+  if (app && app.GetTTSVoices) return app.GetTTSVoices()
+
+  // WebUI Fallback：调 HTTP 接口拉取发音人列表
+  const data = await apiGet('/tts/voices')
+  return Array.isArray(data) ? data : []
 }
 
 export async function generateTTS(provider, voiceName, text, speed, volume, pitch, languageHint) {
@@ -279,7 +283,18 @@ export async function generateTTS(provider, voiceName, text, speed, volume, pitc
       String(languageHint || "")
     )
   }
-  return ""
+
+  // WebUI Fallback：调 HTTP 接口合成语音，接收返回的 base64Uri 字符串
+  const res = await apiPostJSON('/tts/generate', JSON.stringify({
+    provider: String(provider || ""),
+    voiceName: String(voiceName || ""),
+    text: String(text || ""),
+    speed: Number(speed) || 1.0,
+    volume: Number(volume) || 80,
+    pitch: Number(pitch) || 1.0,
+    languageHint: String(languageHint || "")
+  }))
+  return res?.path ?? ""
 }
 
 // 浏览器环境下触发 `<input type=file>` 选择文件

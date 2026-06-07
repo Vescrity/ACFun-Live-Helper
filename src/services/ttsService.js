@@ -1,3 +1,4 @@
+import { ref } from "vue"
 import { generateTTS } from "./nativeBridge"
 import { BackendDanmuTypes } from "./acfunBackend"
 import { aIslandEmotes } from "@/assets/previewData.js"

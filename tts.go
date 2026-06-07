@@ -17,7 +17,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 	"unicode"
 
@@ -486,14 +485,9 @@ func randomHexStr(n int) string {
 	return hex.EncodeToString(bytes)
 }
 
-// hideWindow 隐藏子进程窗口 (Windows 平台)
 func hideWindow(cmd *exec.Cmd) {
-	// 在 Windows 平台下隐藏命令控制台窗口
-	// syscall.CREATE_NO_WINDOW = 0x08000000
 	if runtime.GOOS != "windows" {
 		return
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: 0x08000000,
-	}
+	windowsHideWindow(cmd)
 }

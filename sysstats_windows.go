@@ -128,3 +128,10 @@ func calculateCPULoad(idle1, kernel1, user1, idle2, kernel2, user2 FILETIME) flo
 	}
 	return float64(totalDiff-idleDiff) / float64(totalDiff) * 100.0
 }
+
+func windowsHideWindow(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags = 0x08000000 // CREATE_NO_WINDOW
+}

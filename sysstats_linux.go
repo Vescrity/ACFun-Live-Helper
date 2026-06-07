@@ -153,3 +153,5 @@ func getPlatformFonts() []string {
 	sort.Strings(result)
 	return result
 }
+
+func windowsHideWindow(cmd *exec.Cmd) { }
