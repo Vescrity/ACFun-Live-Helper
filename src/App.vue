@@ -920,7 +920,6 @@
                 </div>
               </div>
             </Transition>
-
             <Transition name="fade-slide">
               <div v-if="showTtsSettings" class="tts-settings-panel">
                 <div class="form-grid cols-2">
@@ -933,14 +932,13 @@
                     />
                   </label>
 
-                  <!-- 菜单分支 A：如果选择“浏览器原生 (本地离线)”，展示极简的级联双菜单，布局宽度自适应 -->
                   <template v-if="store.tts.provider === 'local'">
                     <label>
                       <span>1. 发音语言 (lang)</span>
                       <PlainSelect
                         v-model="store.tts.localLang"
                         :options="uniqueLangs.map(l => ({ value: l, label: l }))"
-                        placeholder="未检测到语言代码"
+                        placeholder="未检测到系统语言"
                         @change="persistTtsSettings"
                       />
                     </label>
@@ -949,13 +947,12 @@
                       <PlainSelect
                         v-model="store.tts.localVoiceName"
                         :options="filteredVoices.map(v => ({ value: v.name, label: v.name }))"
-                        placeholder="当前语言下无可用声音"
+                        placeholder="该语言下无可用声音"
                         @change="persistTtsSettings"
                       />
                     </label>
                   </template>
 
-                  <!-- 菜单分支 B：如果是传统的 Edge 或 Windows SAPI 引擎，维持原本的单下拉菜单样式 -->
                   <template v-else>
                     <label>
                       <span>发音人</span>
@@ -967,6 +964,7 @@
                       />
                     </label>
                   </template>
+
                   <label>
                     <span>语速</span>
                     <div class="tts-scale-control">
@@ -1017,6 +1015,14 @@
                     <input v-model="store.tts.readGift" type="checkbox" @change="persistTtsSettings" />
                     <span>读礼物/香蕉</span>
                   </label>
+                  <label class="checkbox-label" title="播报观众关注主播的信息">
+                    <input v-model="store.tts.readFollow" type="checkbox" @change="persistTtsSettings" />
+                    <span>读关注</span>
+                  </label>
+                  <label class="checkbox-label" title="播报进入直播间的信息（人多时不建议开启）">
+                    <input v-model="store.tts.readJoinRoom" type="checkbox" @change="persistTtsSettings" />
+                    <span>读进入</span>
+                  </label>
                 </div>
                 <p class="tts-hint">Edge TTS 需要联网；生成失败时会自动改用 Windows SAPI。</p>
                 <div class="test-input-row">
@@ -1033,7 +1039,6 @@
                 </div>
               </div>
             </Transition>
-
           </div>
         </div>
 

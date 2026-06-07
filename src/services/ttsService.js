@@ -421,7 +421,7 @@ function speakLocalPromise(text, settings) {
     // 精准匹配设置的发音人与语言代码
     const voices = window.speechSynthesis.getVoices()
     let voice = voices.find(v => v.name === settings.localVoiceName && v.lang === settings.localLang)
-    
+
     // 如果找不到，尝试匹配任意中文
     if (!voice) {
       voice = voices.find(v => {
@@ -465,6 +465,7 @@ class TTSService {
     }
 
     const sourceType = Number(context.sourceType || 0)
+
     if (COMMENT_TYPES.has(sourceType)) {
       if (!settings.readComment) {
         return
@@ -473,11 +474,18 @@ class TTSService {
       if (!settings.readGift) {
         return
       }
+    } else if (sourceType === BackendDanmuTypes.FOLLOW_AUTHOR || sourceType === BackendDanmuTypes.JOIN_CLUB) {
+      if (!settings.readFollow) {
+        return
+      }
+    } else if (sourceType === BackendDanmuTypes.ENTER_ROOM) {
+      if (!settings.readJoinRoom) {
+        return
+      }
     } else {
       return
     }
 
-    // 1. 过滤自己发送的弹幕
     if (item.self) {
       return
     }
@@ -486,20 +494,23 @@ class TTSService {
       return
     }
 
-    // 2. 文本规范化：把 emoji / 颜文字转成可朗读词，避免合成器直接静音跳过。
-    let text = normalizeTtsText(item.content)
+    let rawText = ""
+    if (item.isGift) {
+      rawText = `送了${item.num || 1}个${item.content || "礼物"}`
+    } else {
+      rawText = item.content
+    }
+
+    let text = normalizeTtsText(rawText)
     if (!text) {
       return
     }
 
-    // 3. 超长内容截断
     const maxLength = Number(settings.maxLength) || 50
     text = truncateTtsText(text, maxLength)
 
-    // 4. 组装朗读片段：昵称和正文语言不同时分段，避免日文昵称把中文弹幕带成日语。
     const segments = buildDanmakuSegments(text, item, settings)
 
-    // 5. 队列溢出控制 (爆量丢弃最旧，保持时效性)
     const limit = Number(settings.queueLimit) || 5
     if (this.queue.length >= limit) {
       this.queue.shift()
@@ -512,7 +523,6 @@ class TTSService {
 
     this.triggerPlay()
   }
-
   triggerPlay() {
     if (this.isPlaying || this.isGenerating) {
       return
