@@ -932,15 +932,41 @@
                       @change="onTtsProviderChange"
                     />
                   </label>
-                  <label>
-                    <span>发音人</span>
-                    <PlainSelect
-                      v-model="store.tts.voiceName"
-                      :options="ttsVoiceOptions"
-                      placeholder="无可用声音"
-                      @change="persistTtsSettings"
-                    />
-                  </label>
+
+                  <!-- 菜单分支 A：如果选择“浏览器原生 (本地离线)”，展示极简的级联双菜单，布局宽度自适应 -->
+                  <template v-if="store.tts.provider === 'local'">
+                    <label>
+                      <span>1. 发音语言 (lang)</span>
+                      <PlainSelect
+                        v-model="store.tts.localLang"
+                        :options="uniqueLangs.map(l => ({ value: l, label: l }))"
+                        placeholder="未检测到语言代码"
+                        @change="persistTtsSettings"
+                      />
+                    </label>
+                    <label style="grid-column: span 2;">
+                      <span>2. 发音人选择 (Voice)</span>
+                      <PlainSelect
+                        v-model="store.tts.localVoiceName"
+                        :options="filteredVoices.map(v => ({ value: v.name, label: v.name }))"
+                        placeholder="当前语言下无可用声音"
+                        @change="persistTtsSettings"
+                      />
+                    </label>
+                  </template>
+
+                  <!-- 菜单分支 B：如果是传统的 Edge 或 Windows SAPI 引擎，维持原本的单下拉菜单样式 -->
+                  <template v-else>
+                    <label>
+                      <span>发音人</span>
+                      <PlainSelect
+                        v-model="store.tts.voiceName"
+                        :options="ttsVoiceOptions"
+                        placeholder="无可用声音"
+                        @change="persistTtsSettings"
+                      />
+                    </label>
+                  </template>
                   <label>
                     <span>语速</span>
                     <div class="tts-scale-control">
@@ -2932,7 +2958,75 @@ const convertChineseOptions = [
 const ttsProviderOptions = [
   { value: "edge", label: "Edge TTS (高清网络)" },
   { value: "sapi", label: "Windows SAPI (本地保底)" },
+  // 新增：加入浏览器原生引擎选项
+  { value: "local", label: "浏览器原生 (本地离线)" },
 ]
+
+// === [新增] 浏览器 SpeechSynthesis 原生语音管理 ===
+const synth = window.speechSynthesis
+const uniqueLangs = ref([])     // 系统支持的中文语言代码列表 (例如 cmn, zh-CN)
+const filteredVoices = ref([])  // 对应语言下的发音人列表
+
+function updateLocalVoices() {
+  if (!synth) return
+  const all = synth.getVoices()
+  console.log("[TTS Debug] 系统原始声音列表:", all)
+
+  // 1. 提取所有中文（cmn, zh, cn, yue, chinese）语言
+  const chineseVoices = all.filter(v => {
+    const lang = v.lang.toLowerCase()
+    const name = v.name.toLowerCase()
+    return lang.includes('cmn') || lang.includes('zh') || lang.includes('cn') || lang.includes('yue') || name.includes('chinese')
+  })
+
+  // 2. 提取去重后的语言代码并按代码排序
+  const langSet = new Set(chineseVoices.map(v => v.lang))
+  uniqueLangs.value = Array.from(langSet).sort((a, b) => a.localeCompare(b))
+  console.log("[TTS Debug] 排重且排序后的中文语言代码:", uniqueLangs.value)
+
+  // 3. 初始化选择：如果当前为空，优先匹配 cmn 或 zh-CN
+  if (!store.tts.localLang && uniqueLangs.value.length > 0) {
+    const defaultLang = uniqueLangs.value.find(lang => {
+      const l = lang.toLowerCase()
+      return l.includes('cmn') || l.includes('zh-cn')
+    }) || uniqueLangs.value[0]
+
+    store.tts.localLang = defaultLang
+    store.persist()
+  }
+
+  syncLocalVoicesForSelectedLang()
+}
+
+// 4. 根据当前 localLang 联动更新过滤出的声音人列表
+function syncLocalVoicesForSelectedLang() {
+  if (!synth) return
+  const all = synth.getVoices()
+  
+  filteredVoices.value = all.filter(v => v.lang === store.tts.localLang)
+  console.log(`[TTS Debug] 代码 [${store.tts.localLang}] 下的可选声音人:`, filteredVoices.value)
+
+  // 如果原本选中的声音人不在此语言下，默认选第一个
+  const voiceExists = filteredVoices.value.some(v => v.name === store.tts.localVoiceName)
+  if (!voiceExists && filteredVoices.value.length > 0) {
+    store.tts.localVoiceName = filteredVoices.value[0].name
+    store.persist()
+  }
+}
+
+// 5. 监听 localLang 的变化并自动刷新声音人
+watch(() => store.tts.localLang, () => {
+  syncLocalVoicesForSelectedLang()
+})
+
+// 确保异步载入本地声音
+if (synth) {
+  if (synth.onvoiceschanged !== undefined) {
+    synth.onvoiceschanged = updateLocalVoices
+  }
+  updateLocalVoices()
+}
+// ===============================================
 
 const loadTTSVoices = async () => {
   try {
@@ -2943,11 +3037,12 @@ const loadTTSVoices = async () => {
   }
 }
 
-const filteredVoices = computed(() => {
+// 过滤出隶属于 Edge/SAPI 等网络后端的发音人（避开命名冲突，重命名为 filteredVoices_Edge）
+const filteredVoices_Edge = computed(() => {
   return systemVoices.value.filter(v => v.provider === store.tts.provider)
 })
 
-const ttsVoiceOptions = computed(() => filteredVoices.value.map((voice) => ({
+const ttsVoiceOptions = computed(() => filteredVoices_Edge.value.map((voice) => ({
   value: voice.name,
   label: `${voice.displayName} (${voice.lang})`,
 })))
@@ -2965,11 +3060,16 @@ const persistTtsSettings = () => {
 
 const onTtsProviderChange = () => {
   store.persist()
-  const list = filteredVoices.value
-  if (list.length > 0) {
-    // 自动切换到该引擎下的第一个发音人
-    store.tts.voiceName = list[0].name
-    store.persist()
+  if (store.tts.provider === "local") {
+    // 切到本地模式，自动触发一次本地发音人载入
+    updateLocalVoices()
+  } else {
+    // 切到网络引擎
+    const list = filteredVoices_Edge.value
+    if (list.length > 0) {
+      store.tts.voiceName = list[0].name
+      store.persist()
+    }
   }
 }
 

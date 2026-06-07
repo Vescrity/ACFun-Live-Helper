@@ -425,11 +425,15 @@ function isNotLiveError(error) {
 }
 
 function normalizeTtsSettings(raw = {}) {
-  const provider = raw.provider === "sapi" ? "sapi" : "edge"
+  // 允许 sapi, edge, 以及我们新增的 local (浏览器原生离线)
+  const provider = raw.provider === "sapi" ? "sapi" : (raw.provider === "local" ? "local" : "edge")
   return {
     enabled: Boolean(raw.enabled),
     provider,
-    voiceName: raw.voiceName || (provider === "sapi" ? "" : "zh-CN-XiaoxiaoNeural"),
+    voiceName: raw.voiceName || (provider === "sapi" ? "" : (provider === "local" ? "" : "zh-CN-XiaoxiaoNeural")),
+    // === 新增：保存浏览器原生 TTS 的语言代码和发音人名称 ===
+    localLang: raw.localLang || "",
+    localVoiceName: raw.localVoiceName || "",
     volume: Math.min(100, Math.max(0, Number(raw.volume ?? 80) || 80)),
     speed: Math.min(2, Math.max(0.5, Number(raw.speed ?? 1) || 1)),
     pitch: Math.min(2, Math.max(0.5, Number(raw.pitch ?? 1) || 1)),

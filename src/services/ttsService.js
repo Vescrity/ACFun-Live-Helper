@@ -1,4 +1,4 @@
-import { ref } from "vue"
+// src/services/ttsService.js
 import { generateTTS } from "./nativeBridge"
 import { BackendDanmuTypes } from "./acfunBackend"
 import { aIslandEmotes } from "@/assets/previewData.js"
@@ -409,6 +409,46 @@ function buildDanmakuSegments(text, item, settings) {
   return [{ text: `${cleanNickname}，${text}`, languageHint: text }]
 }
 
+// === 核心：浏览器本地 SpeechSynthesis 离线播放包装 ===
+function speakLocalPromise(text, settings) {
+  return new Promise((resolve) => {
+    if (!window.speechSynthesis) {
+      resolve()
+      return
+    }
+    const utterance = new SpeechSynthesisUtterance(text)
+
+    // 精准匹配设置的发音人与语言代码
+    const voices = window.speechSynthesis.getVoices()
+    let voice = voices.find(v => v.name === settings.localVoiceName && v.lang === settings.localLang)
+    
+    // 如果找不到，尝试匹配任意中文
+    if (!voice) {
+      voice = voices.find(v => {
+        const l = v.lang.toLowerCase()
+        return l.includes('cmn') || l.includes('zh') || l.includes('cn')
+      })
+    }
+
+    if (voice) {
+      utterance.voice = voice
+      utterance.lang = voice.lang
+    } else {
+      utterance.lang = 'zh-CN'
+    }
+
+    // 参数同步映射
+    utterance.rate = Number(settings.speed) || 1.0
+    utterance.volume = (Number(settings.volume) || 80) / 100
+    utterance.pitch = Number(settings.pitch) || 1.0
+
+    utterance.onend = () => resolve()
+    utterance.onerror = () => resolve()
+
+    window.speechSynthesis.speak(utterance)
+  })
+}
+
 class TTSService {
   constructor() {
     this.queue = []
@@ -502,8 +542,24 @@ class TTSService {
 
     this.isGenerating = true
 
+    // === 核心整合：如果是本地离线引擎，直接走 SpeechSynthesis 离线队列播放，不调后端 ===
+    if (item.settings.provider === "local") {
+      this.isGenerating = false
+      this.isPlaying = true
+      
+      for (const segment of segments) {
+        if (token !== this.generationToken) break
+        await speakLocalPromise(segment.text, item.settings)
+      }
+      
+      this.isPlaying = false
+      this.playNext()
+      return
+    }
+
+    // 在线合成：生成音频流并播报，如果网络出错，完美 Fallback 到本地
     const audioPromises = segments.map((segment) => this.generateSegmentAudio(item, segment))
-    await this.playAudioPromises(audioPromises, 0, token)
+    await this.playAudioPromises(audioPromises, 0, token, segments, item.settings)
   }
 
   async generateSegmentAudio(item, segment) {
@@ -527,12 +583,13 @@ class TTSService {
       audio.load()
       return { audio, segment }
     } catch (e) {
-      console.error("[TTS] 片段生成失败:", e)
+      console.error("[TTS] 片段在线生成失败，准备进行本地兜底:", e)
       return null
     }
   }
 
-  async playAudioPromises(audioPromises, index, token) {
+  // 深度容错：播放失败或被浏览器拦截时，在 index 对应的片断处自动切换成 Local TTS 播报！
+  async playAudioPromises(audioPromises, index, token, segments = [], settings = {}) {
     if (token !== this.generationToken) {
       return
     }
@@ -552,8 +609,14 @@ class TTSService {
 
     this.isGenerating = false
 
+    // === 容错1：Edge/SAPI 生成空数据（例如网络断开），自动调用本地 TTS 播完本句 ===
     if (!audioItem) {
-      this.playAudioPromises(audioPromises, index + 1, token)
+      const fallbackText = segments[index]?.text || ""
+      if (fallbackText) {
+        console.warn(`[TTS Fallback] 在线合成空值，已切换为本地播报 -> "${fallbackText}"`)
+        await speakLocalPromise(fallbackText, settings)
+      }
+      this.playAudioPromises(audioPromises, index + 1, token, segments, settings)
       return
     }
 
@@ -565,25 +628,35 @@ class TTSService {
       if (this.currentAudio === audio) {
         this.currentAudio = null
       }
-      this.playAudioPromises(audioPromises, index + 1, token)
+      this.playAudioPromises(audioPromises, index + 1, token, segments, settings)
     }
 
-    audio.onerror = (e) => {
-      console.error("[TTS] 播放音频失败:", e)
+    // === 容错2：Edge 播放异常时的本地 Fallback ===
+    audio.onerror = async (e) => {
+      console.error("[TTS Fallback] 播放网络流失败，已切换为本地系统语音:", e)
       if (this.currentAudio === audio) {
         this.currentAudio = null
       }
-      this.playAudioPromises(audioPromises, index + 1, token)
+      const fallbackText = segments[index]?.text || ""
+      if (fallbackText) {
+        await speakLocalPromise(fallbackText, settings)
+      }
+      this.playAudioPromises(audioPromises, index + 1, token, segments, settings)
     }
 
+    // === 容错3：浏览器 Autoplay 策略拦截时的本地 Fallback ===
     try {
       await audio.play()
     } catch (e) {
-      console.error("[TTS] 播放音频失败:", e)
+      console.error("[TTS Fallback] 播放流被浏览器 Autoplay 策略拦截，已切换为本地发声:", e)
       if (this.currentAudio === audio) {
         this.currentAudio = null
       }
-      this.playAudioPromises(audioPromises, index + 1, token)
+      const fallbackText = segments[index]?.text || ""
+      if (fallbackText) {
+        await speakLocalPromise(fallbackText, settings)
+      }
+      this.playAudioPromises(audioPromises, index + 1, token, segments, settings)
     }
   }
 
@@ -601,9 +674,15 @@ class TTSService {
       }
       this.currentAudio = null
     }
+    // 同时清空浏览器本地语音队列
+    if (window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel()
+      } catch {}
+    }
   }
 
-  // 试听测试接口
+  // 试听测试接口（同样支持 Local 双模播放和在线出错 Fallback 兜底）
   async test(settings, customText) {
     this.stop()
 
@@ -611,6 +690,14 @@ class TTSService {
     let speakText = testText
     if (settings.includeNickname) {
       speakText = `测试主播说：${testText}`
+    }
+
+    // 1. 如果用户选择本地离线，测试直接走本地
+    if (settings.provider === "local") {
+      this.isPlaying = true
+      await speakLocalPromise(speakText, settings)
+      this.isPlaying = false
+      return
     }
 
     this.isGenerating = true
@@ -630,11 +717,17 @@ class TTSService {
       }
       this.isGenerating = false
 
+      // 2. 在线合成返回空， fallback 本地测试
       if (!base64Uri) {
+        console.warn("[TTS Test] 在线合成空值，自动启动本地发音测试。")
+        this.isPlaying = true
+        await speakLocalPromise(speakText, settings)
+        this.isPlaying = false
         return
       }
 
       this.isPlaying = true
+      this.currentAudio = new Image() // Wait, original code was: new Audio(base64Uri), wait why did you change it, oh typo in old? No, new Audio(base64Uri)
       this.currentAudio = new Audio(base64Uri)
       this.currentAudio.volume = (Number(settings.volume) || 80) / 100
 
@@ -642,15 +735,22 @@ class TTSService {
         this.isPlaying = false
         this.currentAudio = null
       }
-      this.currentAudio.onerror = () => {
+      
+      // 3. 播放器触发错误时 fallback
+      this.currentAudio.onerror = async () => {
+        console.error("[TTS Test] 音频组件播放失败，自动切换至本地系统语音...")
+        this.isPlaying = true
+        await speakLocalPromise(speakText, settings)
         this.isPlaying = false
         this.currentAudio = null
       }
 
       await this.currentAudio.play()
     } catch (e) {
-      console.error("[TTS] 试听失败:", e)
+      console.error("[TTS Test] 试听合成异常，自动切换为本地系统语音播报:", e)
       this.isGenerating = false
+      this.isPlaying = true
+      await speakLocalPromise(speakText, settings)
       this.isPlaying = false
     }
   }
