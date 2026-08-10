@@ -33,25 +33,25 @@ type App struct {
 	backendPort   int
 	overlayServer *http.Server
 	overlayURL    string
-	// overlay 样式实时同步：BroadcastOverlayStyle 把最新样式 JSON 缓存到 overlayStyle，
-	// 同时通过 SSE 推送给所有连入 /events 的 overlay 客户端，避免 OBS 必须手动刷新浏览器源。
-	overlayStyleMu   sync.RWMutex
-	overlayStyle     string
-	overlayClientsMu sync.Mutex
-	overlayClients   map[*overlaySSEClient]struct{}
-	logFile          *os.File
-	logPath          string
-	logMu            sync.Mutex
-	sysStatsMu       sync.Mutex
-	cpuPercent       float64
-	memPercent       float64
-	stopStatsChan    chan struct{}
-	isMini           bool
-	miniCmd          *exec.Cmd
+	// overlay 实时同步：按 channel 缓存最新 JSON，并通过 SSE 推给对应 OBS 浏览器源。
+	overlayPayloadsMu sync.RWMutex
+	overlayPayloads   map[string]string
+	overlayClientsMu  sync.Mutex
+	overlayClients    map[*overlaySSEClient]struct{}
+	logFile           *os.File
+	logPath           string
+	logMu             sync.Mutex
+	sysStatsMu        sync.Mutex
+	cpuPercent        float64
+	memPercent        float64
+	stopStatsChan     chan struct{}
+	isMini            bool
+	miniCmd           *exec.Cmd
 }
 
 type overlaySSEClient struct {
-	ch chan string
+	channel string
+	ch      chan string
 }
 
 func NewApp(isMini bool) *App {
@@ -456,6 +456,15 @@ func (a *App) GetOverlayBaseUrl() (string, error) {
 	return a.overlayURL + "/danmaku-overlay.html", nil
 }
 
+func (a *App) GetSongRequestOverlayUrl() (string, error) {
+	if a.overlayURL == "" {
+		if err := a.startOverlayServer(); err != nil {
+			return "", err
+		}
+	}
+	return a.overlayURL + "/song-request-overlay.html", nil
+}
+
 func (a *App) startOverlayServer() error {
 	if a.overlayServer != nil && a.overlayURL != "" {
 		return nil
@@ -509,6 +518,7 @@ func (a *App) stopOverlayServer(parent context.Context) {
 	a.overlayURL = ""
 }
 
+// serveOverlayEvents 升级请求为 Server-Sent Events 流，把对应 channel 的最新 payload 推给 overlay 客户端。
 func (a *App) serveOverlayEvents(response http.ResponseWriter, request *http.Request) {
 	flusher, ok := response.(http.Flusher)
 	if !ok {
@@ -521,7 +531,8 @@ func (a *App) serveOverlayEvents(response http.ResponseWriter, request *http.Req
 	response.Header().Set("X-Accel-Buffering", "no")
 	response.Header().Set("Access-Control-Allow-Origin", "*")
 
-	client := &overlaySSEClient{ch: make(chan string, 8)}
+	channel := overlayChannel(request.URL.Query().Get("channel"))
+	client := &overlaySSEClient{channel: channel, ch: make(chan string, 8)}
 
 	a.overlayClientsMu.Lock()
 	if a.overlayClients == nil {
@@ -536,9 +547,12 @@ func (a *App) serveOverlayEvents(response http.ResponseWriter, request *http.Req
 		a.overlayClientsMu.Unlock()
 	}()
 
-	a.overlayStyleMu.RLock()
-	current := a.overlayStyle
-	a.overlayStyleMu.RUnlock()
+	a.overlayPayloadsMu.RLock()
+	current := ""
+	if a.overlayPayloads != nil {
+		current = a.overlayPayloads[channel]
+	}
+	a.overlayPayloadsMu.RUnlock()
 	if current != "" {
 		writeSSE(response, "style", current)
 		flusher.Flush()
@@ -565,6 +579,15 @@ func (a *App) serveOverlayEvents(response http.ResponseWriter, request *http.Req
 	}
 }
 
+func overlayChannel(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "song":
+		return "song"
+	default:
+		return "danmaku"
+	}
+}
+
 func writeSSE(w io.Writer, event, payload string) {
 	cleaned := strings.ReplaceAll(payload, "\r", "")
 	cleaned = strings.ReplaceAll(cleaned, "\n", " ")
@@ -572,9 +595,13 @@ func writeSSE(w io.Writer, event, payload string) {
 }
 
 func (a *App) serveOverlayStyle(response http.ResponseWriter, request *http.Request) {
-	a.overlayStyleMu.RLock()
-	payload := a.overlayStyle
-	a.overlayStyleMu.RUnlock()
+	channel := overlayChannel(request.URL.Query().Get("channel"))
+	a.overlayPayloadsMu.RLock()
+	payload := ""
+	if a.overlayPayloads != nil {
+		payload = a.overlayPayloads[channel]
+	}
+	a.overlayPayloadsMu.RUnlock()
 	response.Header().Set("Content-Type", "application/json")
 	response.Header().Set("Cache-Control", "no-store")
 	if payload == "" {
@@ -587,16 +614,31 @@ func (a *App) serveOverlayStyle(response http.ResponseWriter, request *http.Requ
 // BroadcastOverlayStyle 由前端在样式变化时调用：缓存最新样式 JSON 字符串并推给所有 overlay 客户端，
 // 让 OBS 浏览器源无需手动刷新即可应用新设置。
 func (a *App) BroadcastOverlayStyle(payload string) error {
+	return a.broadcastOverlayPayload("danmaku", payload)
+}
+
+func (a *App) BroadcastSongRequestOverlay(payload string) error {
+	return a.broadcastOverlayPayload("song", payload)
+}
+
+func (a *App) broadcastOverlayPayload(channel string, payload string) error {
 	if payload == "" {
 		return nil
 	}
-	a.overlayStyleMu.Lock()
-	a.overlayStyle = payload
-	a.overlayStyleMu.Unlock()
+	channel = overlayChannel(channel)
+	a.overlayPayloadsMu.Lock()
+	if a.overlayPayloads == nil {
+		a.overlayPayloads = make(map[string]string)
+	}
+	a.overlayPayloads[channel] = payload
+	a.overlayPayloadsMu.Unlock()
 
 	a.overlayClientsMu.Lock()
 	defer a.overlayClientsMu.Unlock()
 	for c := range a.overlayClients {
+		if c.channel != channel {
+			continue
+		}
 		select {
 		case c.ch <- payload:
 		default:
