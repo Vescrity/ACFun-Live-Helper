@@ -17,6 +17,7 @@ func registerWebUIHandlers(mux *http.ServeMux, app *App) {
 	mux.HandleFunc("/api/fonts", jsonHandler(func() any { return app.GetSystemFonts() }))
 	mux.HandleFunc("/api/backend-port", jsonHandler(func() any { return map[string]int{"port": app.GetBackendPort()} }))
 	mux.HandleFunc("/api/overlay-url", jsonHandler(func() any { return jsonOrError(app.GetOverlayBaseUrl()) }))
+	mux.HandleFunc("/api/overlay-song-url", jsonHandler(func() any { return jsonOrError(app.GetSongRequestOverlayUrl()) }))
 	mux.HandleFunc("/api/tts/voices", jsonHandler(func() any { return jsonOrError(app.GetTTSVoices()) }))
 	mux.HandleFunc("/api/tts/generate", methodHandler("POST", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -81,6 +82,12 @@ func registerWebUIHandlers(mux *http.ServeMux, app *App) {
 	mux.HandleFunc("/api/overlay-style", methodHandler("POST", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		_ = app.BroadcastOverlayStyle(string(body))
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	mux.HandleFunc("/api/overlay-song", methodHandler("POST", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = app.BroadcastSongRequestOverlay(string(body))
 		w.WriteHeader(http.StatusOK)
 	}))
 

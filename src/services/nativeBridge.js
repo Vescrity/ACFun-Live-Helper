@@ -105,6 +105,13 @@ export async function getOverlayBaseUrl() {
   return data?.error ?? (typeof data === 'string' ? data : "")
 }
 
+export async function getSongRequestOverlayUrl() {
+  const app = wailsApp()
+  if (app && app.GetSongRequestOverlayUrl) return app.GetSongRequestOverlayUrl()
+  const data = await apiGet('/overlay-song-url')
+  return data?.error ?? (typeof data === 'string' ? data : "")
+}
+
 export async function getBackendPort() {
   const app = wailsApp()
   if (app && app.GetBackendPort) return app.GetBackendPort()
@@ -254,6 +261,15 @@ export async function broadcastOverlayStyle(payload) {
   apiPost('/overlay-style', String(payload || ""))
 }
 
+export async function broadcastSongRequestOverlay(payload) {
+  const app = wailsApp()
+  if (app && app.BroadcastSongRequestOverlay) return app.BroadcastSongRequestOverlay(String(payload || ""))
+  apiPost('/overlay-song', String(payload || ""))
+}
+
+// 让用户选择保存路径，并把远程录播文件流式下载到本地。
+// 返回最终保存路径；用户取消保存对话框时返回空串。
+// 浏览器环境（无 wails）下回退到 window.open，由系统浏览器接管下载。
 export async function downloadPlaybackToFile(url, suggestedName) {
   const app = wailsApp()
   if (app && app.DownloadPlaybackToFile) return app.DownloadPlaybackToFile(String(url || ""), String(suggestedName || ""))
