@@ -1741,7 +1741,7 @@ import {
   getOverlayBaseUrl,
   broadcastOverlayStyle,
   checkForUpdate,
-  downloadAndInstallUpdate,
+  // downloadAndInstallUpdate, // 当前版本仅支持检查更新，自动下载/安装已停用
   downloadPlaybackToFile,
   getSystemFonts,
   openCoverFile,
@@ -3300,16 +3300,17 @@ async function autoCheckForUpdate({ silent = true } = {}) {
     if (!silent || updateState.hasUpdate) {
       showToast(updateState.message)
     }
-    if (info?.hasUpdate && info?.canAutoInstall) {
-      updateState.downloading = true
-      updateState.message = `正在下载 ${info.latestVersion || "新版本"}`
-      showToast(updateState.message)
-      const result = await downloadAndInstallUpdate(info)
-      updateState.installing = Boolean(result?.willRestart)
-      updateState.message = result?.message || "更新已下载，正在重启"
-      showToast(updateState.message)
-    } else if (info?.hasUpdate && !info?.canAutoInstall) {
-      showToast(info.message || "发现新版本，但无法自动安装")
+    // 当前版本仅支持检查更新：发现新版本时提示并打开 Releases 页面，不自动下载或安装。
+    // if (info?.hasUpdate && info?.canAutoInstall) {
+    //   updateState.downloading = true
+    //   updateState.message = `正在下载 ${info.latestVersion || "新版本"}`
+    //   showToast(updateState.message)
+    //   const result = await downloadAndInstallUpdate(info)
+    //   updateState.installing = Boolean(result?.willRestart)
+    //   updateState.message = result?.message || "更新已下载，正在重启"
+    //   showToast(updateState.message)
+    if (info?.hasUpdate) {
+      showToast(info.message || "发现新版本，请前往 Releases 页面下载")
       if (!silent && info.releaseUrl) {
         await openExternalURL(info.releaseUrl)
       }

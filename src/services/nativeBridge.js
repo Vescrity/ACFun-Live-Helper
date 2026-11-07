@@ -149,13 +149,14 @@ export async function checkForUpdate() {
   }
 }
 
-export async function downloadAndInstallUpdate(info) {
-  const app = wailsApp()
-  if (app && app.DownloadAndInstallUpdate) {
-    return app.DownloadAndInstallUpdate(info || {})
-  }
-  throw new Error("当前环境不支持自动更新")
-}
+// 当前版本仅支持检查更新，自动下载/安装入口已停用；恢复时取消注释并同步恢复后端实现。
+// export async function downloadAndInstallUpdate(info) {
+//   const app = wailsApp()
+//   if (app && app.DownloadAndInstallUpdate) {
+//     return app.DownloadAndInstallUpdate(info || {})
+//   }
+//   throw new Error("当前环境不支持自动更新")
+// }
 
 export async function getSystemStats() {
   const app = wailsApp()

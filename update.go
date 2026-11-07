@@ -16,17 +16,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const (
-	appVersion        = "1.1.0"
-	githubOwner       = "epstomai"
+	githubOwner       = "Vescrity"
 	githubRepo        = "ACFun-Live-Helper"
 	githubReleaseAPI  = "https://api.github.com/repos/" + githubOwner + "/" + githubRepo + "/releases"
 	githubReleasesURL = "https://github.com/" + githubOwner + "/" + githubRepo + "/releases"
 )
+
+// appVersion 保持为变量，便于 CI 通过 -ldflags "-X main.appVersion=<tag>" 注入。
+var appVersion = "1.1.0"
 
 // releaseCache 缓存上次 GitHub Releases 的 ETag 和结果，避免重复消耗速率配额。
 var releaseCache struct {
@@ -103,28 +103,40 @@ func (a *App) CheckForUpdate() (UpdateInfo, error) {
 	}
 
 	info.HasUpdate = true
-	asset, ok := chooseUpdateAsset(release.Assets)
-	if !ok {
-		info.Message = "发现新版本，但该 Release 没有可自动安装的 Windows 资产"
-		return info, nil
-	}
-	info.AssetName = asset.Name
-	info.AssetURL = asset.BrowserDownloadURL
-	info.AssetSize = asset.Size
-	info.CanAutoInstall = canInstallAsset(asset.Name)
-	if info.CanAutoInstall && isDevExecutable() {
-		info.CanAutoInstall = false
-		info.Message = fmt.Sprintf("发现新版本 %s；开发进程不执行自动替换", info.LatestVersion)
-		return info, nil
-	}
-	if info.CanAutoInstall {
-		info.Message = fmt.Sprintf("发现新版本 %s，准备自动更新", info.LatestVersion)
-	} else {
-		info.Message = fmt.Sprintf("发现新版本 %s，但资产类型暂不支持自动安装", info.LatestVersion)
-	}
+	// 仅保留更新检查能力：不再挑选可自动安装的资产。
+	// 恢复自动更新时，取消下方注释并同步恢复 DownloadAndInstallUpdate 的实现。
+	// asset, ok := chooseUpdateAsset(release.Assets)
+	// if !ok {
+	// 	info.Message = "发现新版本，但该 Release 没有可自动安装的 Windows 资产"
+	// 	return info, nil
+	// }
+	// info.AssetName = asset.Name
+	// info.AssetURL = asset.BrowserDownloadURL
+	// info.AssetSize = asset.Size
+	// info.CanAutoInstall = canInstallAsset(asset.Name)
+	// if info.CanAutoInstall && isDevExecutable() {
+	// 	info.CanAutoInstall = false
+	// 	info.Message = fmt.Sprintf("发现新版本 %s；开发进程不执行自动替换", info.LatestVersion)
+	// 	return info, nil
+	// }
+	// if info.CanAutoInstall {
+	// 	info.Message = fmt.Sprintf("发现新版本 %s，准备自动更新", info.LatestVersion)
+	// } else {
+	// 	info.Message = fmt.Sprintf("发现新版本 %s，但资产类型暂不支持自动安装", info.LatestVersion)
+	// }
+	info.Message = fmt.Sprintf("发现新版本 %s，请前往 Releases 页面下载", info.LatestVersion)
 	return info, nil
 }
 
+// DownloadAndInstallUpdate 已停用：当前版本仅支持检查更新。
+// 原自动下载 / 替换实现保留在下方注释中；恢复时需同时恢复 CheckForUpdate 的资产筛选逻辑，
+// 并重新引入 wailsRuntime 依赖。
+func (a *App) DownloadAndInstallUpdate(info UpdateInfo) (UpdateInstallResult, error) {
+	return UpdateInstallResult{Version: info.LatestVersion},
+		errors.New("当前版本仅支持检查更新，请前往 Releases 页面手动下载")
+}
+
+/*
 func (a *App) DownloadAndInstallUpdate(info UpdateInfo) (UpdateInstallResult, error) {
 	result := UpdateInstallResult{
 		Version: info.LatestVersion,
@@ -209,6 +221,7 @@ func (a *App) DownloadAndInstallUpdate(info UpdateInfo) (UpdateInstallResult, er
 	}()
 	return result, nil
 }
+*/
 
 func fetchBestGithubRelease(ctx context.Context) (githubRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubReleaseAPI+"?per_page=10", nil)
@@ -265,6 +278,8 @@ func fetchBestGithubRelease(ctx context.Context) (githubRelease, error) {
 	return best, nil
 }
 
+// 以下为自动更新辅助逻辑：当前版本仅支持检查更新，暂未调用。
+// 恢复自动下载/安装时启用对应入口函数即可。
 func chooseUpdateAsset(assets []githubAsset) (githubAsset, bool) {
 	type candidate struct {
 		asset githubAsset
