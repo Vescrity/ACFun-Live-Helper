@@ -17,7 +17,7 @@
 
 WebUI 模式下以本地 HTTP 服务运行，自动打开系统浏览器，**无需 WebView2 / WebKit**，可在任何有浏览器的平台上运行。
 
-> **当前版本**：`v1.1.0` — [前往 Releases 下载](https://github.com/Vescrity/ACFun-Live-Helper/releases/latest)
+> **当前版本**：`v1.1.1` — [前往 Releases 下载](https://github.com/Vescrity/ACFun-Live-Helper/releases/latest)
 >
 > 预编译产物由 GitHub Actions 自动构建，覆盖 Linux / Windows / macOS（amd64 & arm64）。
 

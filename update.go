@@ -26,7 +26,7 @@ const (
 )
 
 // appVersion 保持为变量，便于 CI 通过 -ldflags "-X main.appVersion=<tag>" 注入。
-var appVersion = "1.1.0"
+var appVersion = "1.1.1"
 
 // releaseCache 缓存上次 GitHub Releases 的 ETag 和结果，避免重复消耗速率配额。
 var releaseCache struct {
