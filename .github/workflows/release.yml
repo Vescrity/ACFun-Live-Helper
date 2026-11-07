@@ -1,0 +1,239 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      with_wails:
+        description: "同时构建 Wails 桌面版（Windows / Linux）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 准备版本号并只构建一次前端，供各平台交叉编译复用。
+  # ---------------------------------------------------------------------------
+  prepare:
+    name: Prepare version & frontend
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            if [[ "$VERSION" != "$PKG_VERSION" ]]; then
+              echo "::error::tag ${GITHUB_REF_NAME} 与 package.json 版本 ${PKG_VERSION} 不一致"
+              exit 1
+            fi
+          else
+            VERSION="$PKG_VERSION"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "构建版本：$VERSION"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # WebUI 模式：纯 Go 静态链接，可在 Linux runner 上交叉编译全部平台。
+  # ---------------------------------------------------------------------------
+  build-webui:
+    name: WebUI ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          # TODO: Windows / macOS 构建失败待修复，恢复时取消注释。
+          # - goos: windows
+          #   goarch: amd64
+          # - goos: windows
+          #   goarch: arm64
+          # - goos: darwin
+          #   goarch: amd64
+          # - goos: darwin
+          #   goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Build & package
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          EXT=""
+          if [[ "$GOOS" == "windows" ]]; then
+            EXT=".exe"
+          fi
+
+          mkdir -p out
+          CGO_ENABLED=0 go build -trimpath \
+            -ldflags "-s -w -X main.appVersion=${VERSION}" \
+            -o "out/aclivehelper-webui${EXT}" .
+
+          PKG="aclivehelper-${VERSION}-webui-${GOOS}-${GOARCH}"
+          STAGE="$(mktemp -d)"
+          cp "out/aclivehelper-webui${EXT}" "$STAGE/"
+
+          if [[ "$GOOS" == "windows" ]]; then
+            (cd "$STAGE" && zip -q -r "${GITHUB_WORKSPACE}/${PKG}.zip" .)
+            sha256sum "${PKG}.zip" > "${PKG}.zip.sha256"
+            echo "ASSET=${PKG}.zip" >> "$GITHUB_ENV"
+          else
+            tar -czf "${PKG}.tar.gz" -C "$STAGE" .
+            sha256sum "${PKG}.tar.gz" > "${PKG}.tar.gz.sha256"
+            echo "ASSET=${PKG}.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+          rm -rf "$STAGE" out
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: webui-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Wails 桌面版：预留，仅在手动触发且勾选 with_wails 时运行。
+  # 注意：Wails 无法跨平台编译，必须使用对应系统的 runner。
+  # ---------------------------------------------------------------------------
+  build-wails:
+    name: Wails ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.with_wails }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows/amd64
+          - os: ubuntu-24.04
+            platform: linux/amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Build Wails app
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAGS="wails"
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            TAGS="wails webkit2_41"
+          fi
+          wails build -platform "${{ matrix.platform }}" -tags "$TAGS" \
+            -ldflags "-s -w -X main.appVersion=${VERSION}"
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          find build/bin -maxdepth 1 -type f -exec cp {} artifacts/ \;
+
+      - name: Upload Wails artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wails-${{ runner.os }}-${{ runner.arch }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 发布：仅在 tag 推送时创建 GitHub Release。
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish Release
+    if: ${{ github.ref_type == 'tag' }}
+    needs:
+      - prepare
+      - build-webui
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: webui-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}
