@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -26,7 +25,7 @@ import (
 const (
 	edgeTrustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
 	edgeChromiumVersion    = "143.0.3650.75"
-	edgeSecMSGecVersion    = "1-" + edgeChromiumVersion
+	edgeSecMSGecVersion    = "2-" + edgeChromiumVersion
 	edgeOrigin             = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"
 )
 
@@ -452,17 +451,6 @@ func powerShellExecutable() string {
 
 func edgeTimestamp() string {
 	return time.Now().UTC().Format("Mon Jan 02 2006 15:04:05 GMT-0700 (Coordinated Universal Time)")
-}
-
-func generateEdgeSecMSGec() string {
-	const windowsEpochSeconds int64 = 11644473600
-	now := time.Now().Unix()
-	ticks := now + windowsEpochSeconds
-	ticks -= ticks % 300
-	fileTimeTicks := ticks * 10000000
-	payload := strconv.FormatInt(fileTimeTicks, 10) + edgeTrustedClientToken
-	hash := sha256.Sum256([]byte(payload))
-	return strings.ToUpper(hex.EncodeToString(hash[:]))
 }
 
 func clampInt(value int, min int, max int) int {
