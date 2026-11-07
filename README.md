@@ -1,6 +1,6 @@
 # ACFun Live Helper
 
-[![Release](https://img.shields.io/github/v/release/epstomai/ACFun-Live-Helper?include_prereleases)](https://github.com/epstomai/ACFun-Live-Helper/releases)
+[![Release](https://img.shields.io/github/v/release/Vescrity/ACFun-Live-Helper?include_prereleases)](https://github.com/Vescrity/ACFun-Live-Helper/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Wails](https://img.shields.io/badge/Wails-v2-red)](https://wails.io/)
 [![Vue](https://img.shields.io/badge/Vue-3-42b883)](https://vuejs.org/)
@@ -17,12 +17,19 @@
 
 WebUI 模式下以本地 HTTP 服务运行，自动打开系统浏览器，**无需 WebView2 / WebKit**，可在任何有浏览器的平台上运行。
 
-> **当前版本**：`v1.1.0` — [前往 Releases 下载](https://github.com/epstomai/ACFun-Live-Helper/releases/latest)
+> **当前版本**：`v1.1.0` — [前往 Releases 下载](https://github.com/Vescrity/ACFun-Live-Helper/releases/latest)
+>
+> 预编译产物由 GitHub Actions 自动构建，覆盖 Linux / Windows / macOS（amd64 & arm64）。
 
 ---
 
+## 维护状态
+
+本项目是从 [epstomai/ACFun-Live-Helper](https://github.com/epstomai/ACFun-Live-Helper) 分叉而来的独立分支，现已独立演进，**不再跟踪、同步或合并上游变更**。上游的提交历史与 issue 不代表本项目现状；问题反馈与贡献请提交至当前仓库。
+
 ## 目录
 
+- [维护状态](#维护状态)
 - [功能特性](#功能特性)
 - [技术栈](#技术栈)
 - [环境要求](#环境要求)
@@ -77,7 +84,7 @@ WebUI 模式下以本地 HTTP 服务运行，自动打开系统浏览器，**无
 
 ### 系统
 - CPU / 内存 / 网络延迟实时监控
-- GitHub Release 更新检查；正式构建可自动下载并启动可用更新包
+- GitHub Release 更新检查：发现新版本时提示并打开 Releases 页面，**不自动下载或安装**
 - 内置日志面板，支持打开日志文件夹快速排错
 - 内嵌 `acfunlive-backend`，无需单独启动 / 配置后端
 
@@ -248,6 +255,9 @@ Wails 构建产物默认位于 `build/bin/ACFun Live Helper.exe`。
 
 ```text
 .
+├── .github/
+│   └── workflows/
+│       └── release.yml  # CI：多平台构建 + Release 发布
 ├── backend/              # Go 后端命令与业务封装
 ├── public/               # 静态资源（弹幕覆盖层等）
 ├── scripts/              # 构建与打包脚本
@@ -277,17 +287,24 @@ Wails 构建产物默认位于 `build/bin/ACFun Live Helper.exe`。
 
 - 新增弹幕 TTS：可朗读普通弹幕与礼物/香蕉，支持语速、音量、队列长度、朗读长度和发音人选择。
 - 新增 OBS 浏览器源 URL 同步：填写源名称后，连接 OBS 可自动写入弹幕源 URL；手动同步会立即刷新浏览器源。
-- 新增自动更新检查：主窗口右上角可检查 GitHub Release，正式构建支持下载并启动可安装更新包。
+- 新增更新检查：主窗口右上角可检查 GitHub Release，发现新版本时提示并打开下载页面。
 - 优化弹幕源与 TTS 文本处理：颜文字、emoji、隐藏标签和中日文语种会更适合朗读。
 
 ## 下载
 
-前往 Releases 页面下载已发布版本：
+预编译版本由 [GitHub Actions](.github/workflows/release.yml) 自动构建并发布到本仓库 Releases 页面：
 
-- 最新版本：<https://github.com/epstomai/ACFun-Live-Helper/releases/latest>
-- 全部版本：<https://github.com/epstomai/ACFun-Live-Helper/releases>
+- 最新版本：<https://github.com/Vescrity/ACFun-Live-Helper/releases/latest>
+- 全部版本：<https://github.com/Vescrity/ACFun-Live-Helper/releases>
 
-Windows 用户下载 `ACFun Live Helper.exe` 双击即可运行。Linux 用户可下载 WebUI 版二进制（单文件，无需任何系统库）。
+每个版本提供 WebUI 单文件产物，覆盖 Linux / Windows / macOS 的 amd64 与 arm64：
+
+| 平台 | 产物 |
+|------|------|
+| Windows | `aclivehelper-<版本>-webui-windows-<架构>.zip`，解压后双击 exe 即可运行 |
+| Linux / macOS | `aclivehelper-<版本>-webui-<平台>-<架构>.tar.gz`，解压后直接运行 |
+
+每个产物附带 `.sha256` 校验文件。
 
 首次启动会在 `%AppData%\aclivehelper` 创建账号配置目录（Windows）或 `~/.config/ACFun Live Helper`（Linux）。
 
@@ -313,6 +330,7 @@ Windows 用户下载 `ACFun Live Helper.exe` 双击即可运行。Linux 用户�
 
 ## 致谢
 
+- 本项目最初 fork 自 [epstomai/ACFun-Live-Helper](https://github.com/epstomai/ACFun-Live-Helper)（作者 **@epstomai**），现已独立维护，不再与上游同步。
 - **[acfundanmu](https://github.com/orzogc/acfundanmu)** by **@orzogc** — A 站弹幕协议与开播 API 的核心实现，本助手的 `third_party/acfundanmu` 完整内嵌该项目源码。
 - **[acfunlive-backend](https://github.com/orzogc/acfunlive-backend)** by **@orzogc** — 直播会话管理 / WebSocket / 命令分发后端，本助手的 `backend/` 在其基础上裁剪集成。
 - **[Wails](https://wails.io/)** — Go + Webview2 桌面应用方案。
